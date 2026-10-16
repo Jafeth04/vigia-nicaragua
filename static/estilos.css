@@ -104,6 +104,9 @@ code { background: #e4e4e7; padding: .1em .35em; border-radius: 4px; }
 .alerta-texto { font-size: 1.1rem; max-width: 26em; }
 .alerta-consejo { margin: 1.2em 0; font-size: 1.3rem; font-weight: 700; }
 .alerta-sismo button { background: #fff; color: var(--rojo-osc); font-weight: 700; }
+.alerta-sismo .alerta-sonido { margin-top: 1em; font-size: 1.15rem; padding: .9em 1.4em; animation: latido 1s infinite; }
+.aviso-sonido { font-size: .85rem; color: var(--suave); margin: .6em 0 0; }
+#btn-alertas.activo { background: #dcfce7; color: #166534; }
 
 /* ---------- Panel ---------- */
 .pagina-panel { --fondo-p: #0f1115; --tarjeta-p: #181b22; --borde-p: #2a2f3a; background: var(--fondo-p); color: #e4e4e7; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }

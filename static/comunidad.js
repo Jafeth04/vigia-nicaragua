@@ -13,7 +13,6 @@ let cfg = { zona: 'managua', lat: null, lng: null, numeroSms: '', ...VIGIA.leer(
 let tipoElegido = null;
 let fotoActual = null;
 let enviando = false;
-let audio = null;
 let alertaActual = null;
 let temporizadorAlerta = null;
 let conexion = null;
@@ -159,28 +158,89 @@ function actualizarEnlaceSms() {
 }
 
 // ---------- Alertas ----------
-function activarSonido() {
+// La sirena es un WAV generado aquí y reproducido con <audio>: a diferencia de
+// Web Audio, en iPhone suena aunque el interruptor de silencio esté activado.
+// Los navegadores solo dejan sonar audio después de un toque del usuario, por
+// eso hay que tocar "Activar alertas" una vez cada vez que se abre la página.
+function crearSirena() {
+  const tasa = 22050;
+  const segundos = 2;
+  const n = tasa * segundos;
+  const datos = new DataView(new ArrayBuffer(44 + n * 2));
+  const texto = (pos, s) => [...s].forEach((c, i) => datos.setUint8(pos + i, c.charCodeAt(0)));
+  texto(0, 'RIFF'); datos.setUint32(4, 36 + n * 2, true); texto(8, 'WAVE');
+  texto(12, 'fmt '); datos.setUint32(16, 16, true); datos.setUint16(20, 1, true); datos.setUint16(22, 1, true);
+  datos.setUint32(24, tasa, true); datos.setUint32(28, tasa * 2, true); datos.setUint16(32, 2, true); datos.setUint16(34, 16, true);
+  texto(36, 'data'); datos.setUint32(40, n * 2, true);
+  let fase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / tasa;
+    const frecuencia = 650 + 450 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 1 * t)); // sube y baja como sirena
+    fase += (2 * Math.PI * frecuencia) / tasa;
+    const muestra = 0.55 * Math.sin(fase) + 0.25 * Math.sin(3 * fase); // armónico para que se oiga más fuerte
+    datos.setInt16(44 + i * 2, Math.max(-1, Math.min(1, muestra)) * 32767, true);
+  }
+  return URL.createObjectURL(new Blob([datos.buffer], { type: 'audio/wav' }));
+}
+
+const sirena = new Audio(crearSirena());
+sirena.loop = true;
+let sonidoActivo = false;
+let bloqueoPantalla = null;
+
+async function activarSonido() {
   try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-    audio.resume();
-    pitar(0.15);
+    if (navigator.audioSession) navigator.audioSession.type = 'playback'; // Safari: ignorar el modo silencio
+    sirena.volume = 1;
+    await sirena.play();
+    setTimeout(() => { if (!alertaActual) detenerSirena(); }, 700); // pitido corto de confirmación
+    sonidoActivo = true;
+    hablar('Alertas activadas');
     $('btn-alertas').textContent = '🔔 Alertas con sonido activadas';
-    $('btn-alertas').disabled = true;
+    $('btn-alertas').classList.add('activo');
+    $('aviso-sonido').hidden = true;
+    mantenerPantalla();
   } catch (e) {
-    $('btn-alertas').textContent = 'Este navegador no permite sonido';
+    $('btn-alertas').textContent = '🔇 No se pudo activar el sonido. Toca de nuevo';
   }
 }
 
-function pitar(duracion = 0.35, frecuencia = 880) {
-  if (!audio) return;
-  const osc = audio.createOscillator();
-  const vol = audio.createGain();
-  osc.type = 'square';
-  osc.frequency.value = frecuencia;
-  vol.gain.value = 0.25;
-  osc.connect(vol).connect(audio.destination);
-  osc.start();
-  osc.stop(audio.currentTime + duracion);
+function sonarSirena(segundos) {
+  if (!sonidoActivo) return;
+  sirena.currentTime = 0;
+  sirena.play().catch(() => { $('alerta-sonido').hidden = false; });
+  if (segundos) setTimeout(() => { if (!alertaActual) detenerSirena(); }, segundos * 1000);
+}
+
+function detenerSirena() {
+  sirena.pause();
+  sirena.currentTime = 0;
+}
+
+function hablar(texto) {
+  if (!('speechSynthesis' in window)) return;
+  const frase = new SpeechSynthesisUtterance(texto);
+  frase.lang = 'es-ES';
+  frase.rate = 1.05;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(frase);
+}
+
+async function mantenerPantalla() {
+  // Con la pantalla bloqueada el navegador pausa la página y no puede sonar.
+  try {
+    if ('wakeLock' in navigator && document.visibilityState === 'visible') bloqueoPantalla = await navigator.wakeLock.request('screen');
+  } catch (e) { /* no disponible */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && sonidoActivo) mantenerPantalla();
+});
+
+function probarAlerta() {
+  if (!sonidoActivo) activarSonido();
+  const pos = miPosicion();
+  alertaSismo({ tipo: 'alerta_sismo', id: 'prueba-' + Date.now(), lat: pos.lat, lng: pos.lng, t0: VIGIA.ahora() + 10000, vs: 3.5, n_nodos: 1, prueba: true });
 }
 
 function alertaSismo(msg) {
@@ -189,20 +249,28 @@ function alertaSismo(msg) {
   const distancia = VIGIA.distanciaKm(pos.lat, pos.lng, msg.lat, msg.lng);
   alertaActual = { ...msg, distancia, llegadaS: msg.t0 + (distancia / msg.vs) * 1000 };
   $('alerta-sismo').hidden = false;
+  $('alerta-titulo').textContent = msg.prueba ? '⚠️ PRUEBA DE ALERTA' : '⚠️ SISMO DETECTADO';
+  $('alerta-sonido').hidden = sonidoActivo;
   if (nueva) {
-    if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 600, 200, 600]);
+    if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 600, 200, 600]); // Android; iPhone no vibra desde la web
+    sonarSirena();
+    const segundos = Math.ceil((alertaActual.llegadaS - VIGIA.ahora()) / 1000);
+    hablar(segundos > 1
+      ? `${msg.prueba ? 'Prueba. ' : ''}Sismo detectado. La sacudida llega en ${segundos} segundos. Agáchate, cúbrete y sujétate.`
+      : `${msg.prueba ? 'Prueba. ' : ''}Sismo. Protégete ahora.`);
     clearInterval(temporizadorAlerta);
     temporizadorAlerta = setInterval(tickAlerta, 100);
   }
   tickAlerta();
 }
 
-let ultimoPitido = 0;
+let anuncioAhora = false;
 function tickAlerta() {
   if (!alertaActual) return;
   const restante = (alertaActual.llegadaS - VIGIA.ahora()) / 1000;
   const lejos = alertaActual.distancia > 250;
   if (restante > 0) {
+    anuncioAhora = false;
     $('alerta-cuenta').textContent = `${Math.ceil(restante)} s`;
     $('alerta-texto').textContent = lejos
       ? `Sismo lejano (a ${alertaActual.distancia.toFixed(0)} km). Puede sentirse leve.`
@@ -210,18 +278,18 @@ function tickAlerta() {
   } else {
     $('alerta-cuenta').textContent = '¡AHORA!';
     $('alerta-texto').textContent = 'Protégete ya. Cuando pase, sal con calma y reporta daños.';
+    if (!anuncioAhora) { anuncioAhora = true; hablar('Ahora. Protégete.'); }
   }
-  const ahora = Date.now();
-  if (restante > -10 && ahora - ultimoPitido > (restante > 0 ? 1000 : 500)) {
-    pitar(0.3, restante > 0 ? 880 : 1200);
-    ultimoPitido = ahora;
-  }
+  if (restante < -20 && !sirena.paused) detenerSirena();
   if (restante < -90) cerrarAlerta();
 }
 
 function cerrarAlerta() {
   $('alerta-sismo').hidden = true;
   clearInterval(temporizadorAlerta);
+  alertaActual = null;
+  detenerSirena();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
 function alertaZona(msg) {
@@ -234,7 +302,8 @@ function alertaZona(msg) {
   $('alertas-zona').prepend(div);
   while ($('alertas-zona').children.length > 3) $('alertas-zona').lastChild.remove();
   if (mia) {
-    pitar(0.5, 660);
+    sonarSirena(3);
+    hablar(`Alerta en tu zona. ${msg.mensaje}`);
     if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
   }
 }
@@ -278,6 +347,8 @@ async function iniciar() {
     }, (err) => { $('txt-gps').textContent = 'No se pudo: ' + err.message; }, { enableHighAccuracy: true, timeout: 15000 });
   });
   $('btn-alertas').addEventListener('click', activarSonido);
+  $('btn-probar').addEventListener('click', probarAlerta);
+  $('alerta-sonido').addEventListener('click', async () => { await activarSonido(); sonarSirena(); $('alerta-sonido').hidden = true; });
   $('menos').addEventListener('click', () => { $('personas').value = Math.max(1, Number($('personas').value) - 1); actualizarEnlaceSms(); });
   $('mas').addEventListener('click', () => { $('personas').value = Number($('personas').value) + 1; actualizarEnlaceSms(); });
   $('foto').addEventListener('change', async () => {

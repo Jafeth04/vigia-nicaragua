@@ -24,6 +24,9 @@
         <small id="txt-gps"></small>
       </div>
       <button id="btn-alertas" class="secundario ancho">🔔 Activar alertas con sonido</button>
+      <p id="aviso-sonido" class="aviso-sonido">Toca «Activar alertas» cada vez que abras esta página y déjala abierta:
+        con la pantalla bloqueada el navegador no puede sonar.</p>
+      <button id="btn-probar" class="enlace">▶ Probar alerta (cuenta regresiva de 10 s)</button>
     </section>
 
     <section id="paso-tipo" class="tarjeta">
@@ -73,7 +76,8 @@
   </main>
 
   <div id="alerta-sismo" class="alerta-sismo" hidden>
-    <div class="alerta-titulo">⚠️ SISMO DETECTADO</div>
+    <div id="alerta-titulo" class="alerta-titulo">⚠️ SISMO DETECTADO</div>
+    <button id="alerta-sonido" class="alerta-sonido" hidden>🔊 Toca para escuchar la alarma</button>
     <div id="alerta-cuenta" class="alerta-cuenta"></div>
     <div id="alerta-texto" class="alerta-texto"></div>
     <div class="alerta-consejo">Agáchate · Cúbrete · Sujétate<br>Aléjate de ventanas</div>
