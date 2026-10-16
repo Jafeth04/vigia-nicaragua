@@ -50,6 +50,7 @@ class Simulador:
         self.tareas = set()
         self.silenciados = set()  # nodos "destruidos" por el sismo: dejan de reportar
         self.latido = None
+        self.sismo_real = None  # epicentro verdadero del último sismo simulado, para comparar
 
     def _lanzar(self, coro):
         tarea = asyncio.create_task(coro)
@@ -70,6 +71,7 @@ class Simulador:
         self.tareas.clear()
         self.silenciados.clear()
         self.latido = None
+        self.sismo_real = None
 
     async def asegurar_nodos(self):
         if self.latido and not self.latido.done():
@@ -96,6 +98,7 @@ class Simulador:
         await self.asegurar_nodos()
         origen = ahora_ms() + 1000  # el sismo "ocurre" dentro de 1 s
         espera = 1.0
+        self.sismo_real = {"lat": lat, "lng": lng, "magnitud": magnitud, "profundidad_km": profundidad_km, "t0": origen}
 
         for nodo in NODOS_VIRTUALES:
             nid, modo = nodo[0], nodo[2]

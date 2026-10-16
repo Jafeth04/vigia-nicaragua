@@ -193,11 +193,28 @@ function pintarSismo() {
       }).addTo(capas.sismo),
       circuloP: L.circle([ev.lat, ev.lng], { radius: 0, color: '#38bdf8', weight: 2, dashArray: '6 6', fill: false }).addTo(capas.sismo),
       circuloS: L.circle([ev.lat, ev.lng], { radius: 0, color: '#ef4444', weight: 3, fillOpacity: 0.08 }).addTo(capas.sismo),
+      // Zona donde podría estar el epicentro según los datos disponibles
+      circuloIncertidumbre: L.circle([ev.lat, ev.lng], { radius: 0, color: '#fde047', weight: 1.5, dashArray: '3 6', fillOpacity: 0.07 })
+        .bindTooltip('Zona probable del epicentro').addTo(capas.sismo),
+      real: null,
     };
     mapa.flyTo([ev.lat, ev.lng], 8);
   }
-  Object.assign(sismo, { lat: ev.lat, lng: ev.lng, t0: ev.t0, n: ev.n_nodos });
-  [sismo.epicentro, sismo.circuloP, sismo.circuloS].forEach((capa) => capa.setLatLng([ev.lat, ev.lng]));
+  Object.assign(sismo, {
+    lat: ev.lat, lng: ev.lng, t0: ev.t0, n: ev.n_nodos,
+    incertidumbre: ev.incertidumbre_km, profundidad: ev.profundidad_km,
+  });
+  [sismo.epicentro, sismo.circuloP, sismo.circuloS, sismo.circuloIncertidumbre].forEach((capa) => capa.setLatLng([ev.lat, ev.lng]));
+  sismo.circuloIncertidumbre.setRadius((ev.incertidumbre_km || 0) * 1000);
+
+  // En las simulaciones se conoce el epicentro verdadero: se muestra para comparar.
+  const real = estado.sismo_real;
+  if (real && !sismo.real) {
+    sismo.real = L.marker([real.lat, real.lng], {
+      icon: L.divIcon({ html: '<span class="epicentro-real">✕</span>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] }),
+    }).bindTooltip(`Epicentro real (simulación) · M${real.magnitud} · ${real.profundidad_km} km de profundidad`).addTo(capas.sismo);
+    sismo.coordReal = real;
+  }
 }
 
 function quitarSismo() {
@@ -227,9 +244,19 @@ function animarSismo() {
         ? `<span class="llegada">${VIGIA.esc(l.nombre)} <b>${Math.ceil(falta)} s</b></span>`
         : `<span class="llegada llego">${VIGIA.esc(l.nombre)} ✔</span>`;
     }).join('');
+  let precision;
+  if (sismo.n === 1) {
+    precision = `con 1 nodo solo se sabe la distancia${sismo.incertidumbre ? ` (~${Math.round(sismo.incertidumbre)} km)` : ''}, no la dirección`;
+  } else {
+    precision = `precisión ±${Math.round(sismo.incertidumbre || 0)} km`
+      + (sismo.profundidad ? ` · profundidad ~${sismo.profundidad} km` : '');
+  }
+  const error = sismo.coordReal
+    ? ` · <b>error vs. epicentro real: ${VIGIA.distanciaKm(sismo.lat, sismo.lng, sismo.coordReal.lat, sismo.coordReal.lng).toFixed(1)} km</b>`
+    : '';
   $('banner-sismo').hidden = false;
   $('banner-sismo').innerHTML = `<b>🌐 SISMO DETECTADO</b> · confirmado por ${sismo.n} nodo(s) · epicentro estimado
-    cerca de ${VIGIA.esc(cercano.nombre)} · hace ${Math.max(0, transcurrido).toFixed(0)} s
+    cerca de ${VIGIA.esc(cercano.nombre)} · ${precision}${error} · hace ${Math.max(0, transcurrido).toFixed(0)} s
     <div class="llegadas">Onda fuerte (S) llega a: ${llegadas}</div>`;
 }
 

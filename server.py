@@ -57,6 +57,7 @@ def foto_estado():
         "recursos": E.recursos,
         "bitacora": E.bitacora[-40:][::-1],
         "sismo": S.evento if S.activo(ahora) else None,
+        "sismo_real": SIM.sismo_real if SIM.sismo_real and ahora - SIM.sismo_real["t0"] < 150_000 else None,
         "modo_demo": E.modo_demo,
         "vp": VP,
         "vs": VS,
