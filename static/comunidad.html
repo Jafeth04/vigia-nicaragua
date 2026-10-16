@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#b91c1c">
+  <title>VIGÍA · Comunidad</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body class="pagina-comunidad">
+
+  <header class="com-cabecera">
+    <b>VIGÍA</b><span>Comunidad</span>
+    <span id="conexion" class="pastilla">…</span>
+  </header>
+
+  <div id="alertas-zona" class="alertas-zona"></div>
+
+  <main class="com-cuerpo">
+    <section class="tarjeta">
+      <label>Mi zona <select id="zona"></select></label>
+      <div class="fila">
+        <button id="btn-gps" class="secundario">📍 Usar mi GPS</button>
+        <small id="txt-gps"></small>
+      </div>
+      <button id="btn-alertas" class="secundario ancho">🔔 Activar alertas con sonido</button>
+    </section>
+
+    <section id="paso-tipo" class="tarjeta">
+      <h2>¿Qué está pasando?</h2>
+      <div id="tipos" class="grilla-tipos"></div>
+    </section>
+
+    <section id="paso-detalle" class="tarjeta" hidden>
+      <h2 id="titulo-detalle"></h2>
+      <label>¿Cuántas personas?</label>
+      <div class="contador">
+        <button id="menos" type="button">−</button>
+        <output id="personas">1</output>
+        <button id="mas" type="button">+</button>
+      </div>
+      <label>¿Dónde?
+        <select id="lugar">
+          <option value="casa">Casa</option>
+          <option value="escuela">Escuela</option>
+          <option value="hospital">Hospital / centro de salud</option>
+          <option value="asilo">Hogar de ancianos</option>
+          <option value="otro">Otro</option>
+        </select>
+      </label>
+      <label>Detalle (opcional)
+        <textarea id="descripcion" rows="2" maxlength="300" placeholder="Ej.: casa de dos pisos, entrada por el callejón"></textarea>
+      </label>
+      <label class="boton-foto secundario">📷 Agregar foto
+        <input id="foto" type="file" accept="image/*" capture="environment" hidden>
+      </label>
+      <img id="vista-foto" class="vista-foto" alt="Foto adjunta" hidden>
+      <button id="btn-enviar" class="grande">ENVIAR REPORTE</button>
+      <a id="btn-sms" class="boton secundario ancho" href="#">✉️ Enviar por SMS (sin internet)</a>
+      <button id="btn-cancelar" class="enlace">Cancelar</button>
+    </section>
+
+    <section class="tarjeta">
+      <h2>Mis reportes</h2>
+      <p id="estado-cola" class="estado-cola"></p>
+      <ul id="mis-reportes" class="mis-reportes"></ul>
+      <details>
+        <summary>Número SMS de la central</summary>
+        <input id="numero-sms" type="tel" placeholder="+505 ...">
+        <small>Formato del SMS: VIGIA ATRAPADOS 3 12.1364,-86.2514</small>
+      </details>
+    </section>
+  </main>
+
+  <div id="alerta-sismo" class="alerta-sismo" hidden>
+    <div class="alerta-titulo">⚠️ SISMO DETECTADO</div>
+    <div id="alerta-cuenta" class="alerta-cuenta"></div>
+    <div id="alerta-texto" class="alerta-texto"></div>
+    <div class="alerta-consejo">Agáchate · Cúbrete · Sujétate<br>Aléjate de ventanas</div>
+    <button id="alerta-cerrar">Cerrar</button>
+  </div>
+
+  <script src="/static/comun.js"></script>
+  <script src="/static/comunidad.js"></script>
+</body>
+</html>

@@ -1,0 +1,418 @@
+// VIGÍA · Nodo sensor
+// Convierte un celular en desuso en un sensor fijo. Lee el acelerómetro
+// (con gravedad) y según el modo detecta:
+//   estructura: ondas P y S de un sismo, sacudida máxima e inclinación permanente
+//   ladera:     inclinación lenta acumulada, su velocidad y vibración continua (lahar)
+//   rio:        nivel del agua con un brazo y flotador (el ángulo del brazo = nivel)
+
+const $ = (id) => document.getElementById(id);
+
+const UMBRALES = {
+  inclinacion: { amarillo: 1, rojo: 3, sostener_s: 5 }, // grados
+  sacudida: { amarillo: 0.5, rojo: 2 }, // m/s²
+  ladera: { incAmarillo: 0.5, incRojo: 2, velAmarillo: 0.2, velRojo: 1, vibracion: 0.15, vibracion_s: 10 },
+  // STA/LTA: promedio corto (0,5 s) contra promedio largo (10 s)
+  staLta: { sta: 0.5, lta: 10, disparo: 4, minimo: 0.08, calentamiento_s: 10 },
+};
+const KM_POR_SEG_SP = (6.0 * 3.5) / (6.0 - 3.5); // ~8,4 km por segundo entre onda P y S
+const RANGO = { verde: 0, amarillo: 1, rojo: 2 };
+
+const CLAVE = 'vigia-nodo';
+let cfg = {
+  id: 'nodo-' + VIGIA.uid().slice(0, 8),
+  nombre: '', modo: 'estructura', tipo_lugar: 'escuela', personas: 300,
+  lugar: 'managua', lat: null, lng: null,
+  brazo_cm: 20, umbral_am_cm: 5, umbral_rojo_cm: 10, invertir: false,
+  ...VIGIA.leer(CLAVE, {}),
+};
+
+let catalogo = null;
+let conexion = null;
+let calibrando = null; // { suma, n } mientras calibra
+let monitoreando = false;
+let g0 = null; // gravedad de referencia (calibración)
+let g = null; // gravedad actual (filtrada)
+let tPrevio = 0;
+let tInicio = 0;
+let muestras = 0;
+let hz = 0;
+const sl = { staV: 0, ltaV: 0, staH: 0, ltaH: 0, staM: 0, ltaM: 0 };
+let evento = null; // sismo en curso
+let pgaMax = 0; // pico de sacudida desde el último restablecimiento
+let alarma = { nivel: 'verde', motivo: 'Todo normal' };
+const sostenido = { amarillo: 0, rojo: 0 }; // segundos seguidos sobre el umbral de inclinación
+let segundosVibrando = 0;
+let historial = []; // [t, inclinación o nivel] de los últimos 2 minutos
+let lectura = {};
+let bateria = null;
+let ultimoEnvio = 0;
+let nivelEnviado = '';
+let bloqueoPantalla = null;
+
+// ---------- Vectores ----------
+const sumar = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const restar = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const escalar = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const punto = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norma = (a) => Math.sqrt(punto(a, a));
+const unitario = (a) => escalar(a, 1 / (norma(a) || 1));
+const anguloGrados = (a, b) => (Math.acos(Math.min(1, Math.max(-1, punto(unitario(a), unitario(b))))) * 180) / Math.PI;
+
+// ---------- Lectura del sensor ----------
+function alMoverse(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x === null) return;
+  const t = performance.now() / 1000;
+  const dt = tPrevio ? Math.min(Math.max(t - tPrevio, 0.001), 0.2) : 0.016;
+  tPrevio = t;
+  muestras++;
+  const ac = [a.x, a.y, a.z];
+
+  if (calibrando) {
+    calibrando.suma = sumar(calibrando.suma, ac);
+    calibrando.n++;
+    return;
+  }
+  if (!monitoreando) return;
+
+  // Gravedad = promedio lento (≈1 s). Lo que sobra es movimiento.
+  g = sumar(g, escalar(restar(ac, g), Math.min(1, dt / 1.0)));
+  const lineal = restar(ac, g);
+  const vertical = unitario(g0); // el nodo está fijo: la vertical es la gravedad calibrada
+  const v = punto(lineal, vertical);
+  const componenteV = Math.abs(v);
+  const componenteH = norma(restar(lineal, escalar(vertical, v)));
+  const magnitud = norma(lineal);
+
+  actualizarStaLta(componenteV, componenteH, magnitud, dt);
+  if (cfg.modo !== 'rio') detectarSismo(t, magnitud);
+}
+
+function actualizarStaLta(v, h, m, dt) {
+  const k = (tau) => Math.min(1, dt / tau);
+  sl.staV += (v - sl.staV) * k(UMBRALES.staLta.sta);
+  sl.staH += (h - sl.staH) * k(0.3);
+  sl.staM += (m - sl.staM) * k(UMBRALES.staLta.sta);
+  if (!evento) { // durante un sismo el promedio largo se congela
+    sl.ltaV += (v - sl.ltaV) * k(UMBRALES.staLta.lta);
+    sl.ltaH += (h - sl.ltaH) * k(UMBRALES.staLta.lta);
+    sl.ltaM += (m - sl.ltaM) * k(UMBRALES.staLta.lta);
+  }
+}
+
+// Onda P: subida brusca del movimiento vertical (STA/LTA).
+// Onda S: llega después, más fuerte y sobre todo horizontal.
+// Segundos entre P y S × 8,4 = distancia aproximada al origen del sismo.
+function detectarSismo(t, magnitud) {
+  const U = UMBRALES.staLta;
+  if (!evento) {
+    const listo = t - tInicio > U.calentamiento_s;
+    const razon = sl.staV / Math.max(sl.ltaV, 0.005);
+    if (listo && razon > U.disparo && sl.staV > U.minimo) {
+      evento = { tLocal: t, pga: magnitud, sDetectada: false, ultimoFuerte: t };
+      conexion.enviar({ tipo: 'onda_p', id: cfg.id, t: VIGIA.ahora() });
+      anotar('⚡ Posible onda P detectada');
+    }
+    return;
+  }
+  evento.pga = Math.max(evento.pga, magnitud);
+  if (magnitud > Math.max(0.3, 4 * sl.ltaM)) evento.ultimoFuerte = t;
+
+  if (!evento.sDetectada && t - evento.tLocal > 0.3 && sl.staH > Math.max(3 * sl.ltaH, 0.3) && sl.staH > sl.staV) {
+    evento.sDetectada = true;
+    const sp = t - evento.tLocal;
+    const distancia = sp * KM_POR_SEG_SP;
+    conexion.enviar({ tipo: 'onda_s', id: cfg.id, t: VIGIA.ahora(), sp, distancia_km: distancia });
+    anotar(`🌊 Onda S ${sp.toFixed(1)} s después → origen a ~${distancia.toFixed(0)} km`);
+  }
+
+  if (t - evento.ultimoFuerte > 8) {
+    pgaMax = Math.max(pgaMax, evento.pga);
+    anotar(`Terminó el movimiento. Pico: ${evento.pga.toFixed(2)} m/s²`);
+    conexion.enviar({ tipo: 'fin_sismo', id: cfg.id, pga: evento.pga });
+    evento = null;
+  }
+}
+
+// ---------- Evaluación (1 vez por segundo) ----------
+function evaluar() {
+  hz = muestras;
+  muestras = 0;
+  if (!monitoreando || !g) { pintar(); return; }
+  const t = performance.now() / 1000;
+  let nivel = 'verde';
+  let motivo = 'Todo normal';
+  const subir = (n, m) => { if (RANGO[n] > RANGO[nivel]) { nivel = n; motivo = m; } };
+
+  if (cfg.modo === 'rio') {
+    // El celular va pegado a lo largo del brazo: el eje Y sigue el ángulo del brazo.
+    const seno = (v) => v[1] / (norma(v) || 1);
+    const nivelCm = cfg.brazo_cm * (seno(g) - seno(g0)) * (cfg.invertir ? -1 : 1);
+    guardarHistorial(t, nivelCm);
+    const velocidad = velocidadPorMinuto(t, nivelCm);
+    lectura = { nivel_cm: nivelCm, vel_nivel: velocidad };
+    if (nivelCm >= cfg.umbral_rojo_cm) subir('rojo', `Crecida: nivel +${nivelCm.toFixed(0)} cm`);
+    else if (nivelCm >= cfg.umbral_am_cm) subir('amarillo', `Nivel subiendo: +${nivelCm.toFixed(0)} cm`);
+    alarma = { nivel, motivo }; // el nivel del río no queda "trabado": sigue al agua
+  } else {
+    const inclinacion = anguloGrados(g, g0);
+    guardarHistorial(t, inclinacion);
+    const pga = Math.max(pgaMax, evento ? evento.pga : 0);
+
+    if (cfg.modo === 'estructura') {
+      const U = UMBRALES.inclinacion;
+      sostenido.rojo = inclinacion > U.rojo ? sostenido.rojo + 1 : 0;
+      sostenido.amarillo = inclinacion > U.amarillo ? sostenido.amarillo + 1 : 0;
+      lectura = { inclinacion, sacudida: sl.staM, pga, sta_lta: sl.staV / Math.max(sl.ltaV, 0.005), ruido: sl.ltaV, hz };
+      if (sostenido.rojo >= U.sostener_s) subir('rojo', `Inclinación permanente ${inclinacion.toFixed(1)}°`);
+      else if (sostenido.amarillo >= U.sostener_s) subir('amarillo', `Inclinación ${inclinacion.toFixed(1)}°`);
+    } else { // ladera
+      const U = UMBRALES.ladera;
+      const velocidad = velocidadPorMinuto(t, inclinacion);
+      segundosVibrando = sl.staM > U.vibracion ? segundosVibrando + 1 : 0;
+      lectura = { inclinacion, vel_inclinacion: velocidad, vibracion: sl.staM, pga, ruido: sl.ltaV, hz };
+      if (segundosVibrando >= U.vibracion_s) subir('rojo', 'Vibración continua del suelo (posible lahar)');
+      if (inclinacion > U.incRojo || velocidad > U.velRojo) subir('rojo', `Ladera en movimiento: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
+      else if (inclinacion > U.incAmarillo || velocidad > U.velAmarillo) subir('amarillo', `Ladera inclinándose: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
+    }
+    if (pga > UMBRALES.sacudida.rojo) subir('rojo', `Sacudida fuerte (${pga.toFixed(1)} m/s²)`);
+    else if (pga > UMBRALES.sacudida.amarillo) subir('amarillo', `Sacudida moderada (${pga.toFixed(1)} m/s²)`);
+
+    // En estructura y ladera la alarma queda trabada hasta que alguien la restablezca.
+    if (RANGO[nivel] > RANGO[alarma.nivel]) alarma = { nivel, motivo };
+  }
+  pintar();
+  enviarEstado();
+}
+
+function guardarHistorial(t, valor) {
+  historial.push([t, valor]);
+  while (historial.length && t - historial[0][0] > 120) historial.shift();
+}
+
+function velocidadPorMinuto(t, valor) {
+  const referencia = historial.find(([ti]) => t - ti <= 60);
+  if (!referencia || t - referencia[0] < 10) return 0;
+  return (valor - referencia[1]) / ((t - referencia[0]) / 60);
+}
+
+// ---------- Comunicación ----------
+function enviarHola() {
+  conexion.enviar({
+    tipo: 'hola',
+    nodo: {
+      id: cfg.id, nombre: cfg.nombre || cfg.id, modo: cfg.modo, tipo_lugar: cfg.tipo_lugar,
+      personas: Number(cfg.personas) || 0, lugar: cfg.lugar, lat: cfg.lat, lng: cfg.lng,
+    },
+  }, { encolar: false });
+  nivelEnviado = '';
+}
+
+function enviarEstado() {
+  const ahora = Date.now();
+  if (alarma.nivel === nivelEnviado && ahora - ultimoEnvio < 3000) return;
+  const valores = {};
+  for (const [k, v] of Object.entries(lectura)) valores[k] = Math.round(v * 100) / 100;
+  conexion.enviar({
+    tipo: 'estado', id: cfg.id, estado: alarma.nivel, motivo: alarma.motivo, valores,
+    bateria: bateria ? Math.round(bateria.level * 100) : null,
+  }, { encolar: alarma.nivel !== nivelEnviado }); // los cambios de estado se encolan; las lecturas repetidas no
+  nivelEnviado = alarma.nivel;
+  ultimoEnvio = ahora;
+}
+
+function alMensaje(msg) {
+  if (msg.tipo === 'restablecer') restablecer('desde el panel');
+  if (msg.tipo === 'reiniciado') { restablecer('el sistema se reinició'); enviarHola(); }
+}
+
+// ---------- Control ----------
+async function pedirPermisoSensores() {
+  // iPhone exige pedir permiso con un toque del usuario
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    const respuesta = await DeviceMotionEvent.requestPermission();
+    if (respuesta !== 'granted') throw new Error('Permiso de sensores denegado');
+  }
+}
+
+async function calibrarEIniciar() {
+  leerFormulario();
+  try {
+    await pedirPermisoSensores();
+  } catch (e) {
+    alertaEnPagina('El iPhone negó el permiso de movimiento. Cierra Safari por completo (deslízalo hacia arriba), '
+      + 'vuelve a abrir esta página y, al tocar "Calibrar e iniciar", elige "Permitir". Si no aparece la pregunta: '
+      + 'Ajustes › Safari › Avanzado › Datos de sitios web › borra trycloudflare.com y repite.');
+    return;
+  }
+  mostrarMonitor();
+  if (!conexion) {
+    conexion = VIGIA.conectar('nodo', {
+      id: cfg.id,
+      alMensaje,
+      alCambiarConexion: (ok) => { if (ok) enviarHola(); pintar(); },
+    });
+  } else {
+    enviarHola();
+  }
+  mantenerPantallaEncendida();
+  await calibrar();
+}
+
+async function calibrar() {
+  monitoreando = false;
+  calibrando = { suma: [0, 0, 0], n: 0 };
+  alarma = { nivel: 'verde', motivo: 'Calibrando… no muevas el celular' };
+  pintar();
+  await new Promise((ok) => setTimeout(ok, 5000));
+  if (calibrando.n < 20) {
+    calibrando = null;
+    alarma = { nivel: 'verde', motivo: 'Sin datos del acelerómetro' };
+    pintar();
+    anotar('❌ No llegan datos del acelerómetro. ¿HTTPS? ¿El celular tiene sensor?');
+    return;
+  }
+  g0 = escalar(calibrando.suma, 1 / calibrando.n);
+  g = [...g0];
+  calibrando = null;
+  Object.keys(sl).forEach((k) => { sl[k] = 0; });
+  historial = [];
+  evento = null;
+  tInicio = performance.now() / 1000;
+  restablecer('calibración nueva');
+  monitoreando = true;
+}
+
+function restablecer(razon) {
+  alarma = { nivel: 'verde', motivo: 'Todo normal' };
+  pgaMax = 0;
+  sostenido.amarillo = sostenido.rojo = 0;
+  segundosVibrando = 0;
+  anotar(`🟢 Alarma restablecida (${razon})`);
+  pintar();
+}
+
+async function mantenerPantallaEncendida() {
+  try {
+    if ('wakeLock' in navigator) bloqueoPantalla = await navigator.wakeLock.request('screen');
+  } catch (e) { /* no disponible en este navegador */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && monitoreando) mantenerPantallaEncendida();
+});
+
+// ---------- Interfaz ----------
+const ETIQUETAS = {
+  inclinacion: ['Inclinación', '°'],
+  sacudida: ['Sacudida ahora', 'm/s²'],
+  pga: ['Pico de sacudida', 'm/s²'],
+  sta_lta: ['STA/LTA (disparo > 4)', ''],
+  vel_inclinacion: ['Velocidad', '°/min'],
+  vibracion: ['Vibración del suelo', 'm/s²'],
+  nivel_cm: ['Nivel del agua', 'cm'],
+  vel_nivel: ['Subida', 'cm/min'],
+  ruido: ['Ruido de fondo (vertical)', 'm/s²'],
+  hz: ['Lecturas por segundo', ''],
+};
+
+function pintar() {
+  if ($('vista-monitor').hidden) return;
+  $('txt-nombre').textContent = `${cfg.nombre || cfg.id} · ${$('cfg-modo').selectedOptions[0].textContent}`;
+  const semaforo = $('semaforo');
+  semaforo.className = `semaforo ${alarma.nivel}`;
+  $('txt-estado').textContent = calibrando ? 'CALIBRANDO' : alarma.nivel.toUpperCase();
+  $('txt-motivo').textContent = alarma.motivo;
+  $('lecturas').innerHTML = Object.entries(lectura).map(([k, v]) => {
+    const [nombre, unidad] = ETIQUETAS[k] || [k, ''];
+    return `<dt>${nombre}</dt><dd>${v.toFixed(2)} ${unidad}</dd>`;
+  }).join('');
+  const conectado = conexion && conexion.conectado;
+  $('ind-conexion').textContent = conectado ? '● En línea' : '○ Sin conexión';
+  $('ind-conexion').className = `pastilla ${conectado ? 'ok' : 'mal'}`;
+  $('ind-hz').textContent = `${hz} lecturas/s`;
+  $('ind-bateria').textContent = bateria ? `🔋 ${Math.round(bateria.level * 100)}%${bateria.charging ? ' ⚡' : ''}` : '';
+  $('ind-cola').textContent = conexion && conexion.pendientes ? `📦 ${conexion.pendientes} en cola` : '';
+}
+
+function anotar(texto) {
+  const li = document.createElement('li');
+  li.textContent = `${VIGIA.hora(Date.now())} ${texto}`;
+  $('registro').prepend(li);
+  while ($('registro').children.length > 8) $('registro').lastChild.remove();
+}
+
+function alertaEnPagina(texto) {
+  const aviso = $('aviso-seguro');
+  aviso.hidden = false;
+  aviso.textContent = '⚠️ ' + texto;
+}
+
+function mostrarMonitor() {
+  $('vista-config').hidden = true;
+  $('vista-monitor').hidden = false;
+  pintar();
+}
+
+function mostrarConfig() {
+  $('vista-monitor').hidden = true;
+  $('vista-config').hidden = false;
+}
+
+function llenarFormulario() {
+  $('cfg-nombre').value = cfg.nombre;
+  $('cfg-modo').value = cfg.modo;
+  $('cfg-tipo').value = cfg.tipo_lugar;
+  $('cfg-personas').value = cfg.personas;
+  $('cfg-lugar').value = cfg.lugar;
+  $('cfg-brazo').value = cfg.brazo_cm;
+  $('cfg-umbral-am').value = cfg.umbral_am_cm;
+  $('cfg-umbral-rojo').value = cfg.umbral_rojo_cm;
+  $('cfg-invertir').checked = cfg.invertir;
+  $('cfg-rio').hidden = cfg.modo !== 'rio';
+  $('txt-ubicacion').textContent = cfg.lat !== null ? `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}` : '';
+}
+
+function leerFormulario() {
+  cfg.nombre = $('cfg-nombre').value.trim();
+  cfg.modo = $('cfg-modo').value;
+  cfg.tipo_lugar = $('cfg-tipo').value;
+  cfg.personas = Number($('cfg-personas').value) || 0;
+  if ($('cfg-lugar').value !== cfg.lugar) { cfg.lat = null; cfg.lng = null; } // cambió la zona a mano
+  cfg.lugar = $('cfg-lugar').value;
+  cfg.brazo_cm = Number($('cfg-brazo').value) || 20;
+  cfg.umbral_am_cm = Number($('cfg-umbral-am').value) || 5;
+  cfg.umbral_rojo_cm = Number($('cfg-umbral-rojo').value) || 10;
+  cfg.invertir = $('cfg-invertir').checked;
+  VIGIA.guardar(CLAVE, cfg);
+}
+
+async function iniciarPagina() {
+  if (!window.isSecureContext) $('aviso-seguro').hidden = false;
+  catalogo = await VIGIA.catalogo();
+  $('cfg-lugar').innerHTML = catalogo.lugares.map((l) => `<option value="${l.id}">${VIGIA.esc(l.nombre)}</option>`).join('');
+  llenarFormulario();
+
+  $('cfg-modo').addEventListener('change', () => { $('cfg-rio').hidden = $('cfg-modo').value !== 'rio'; });
+  $('btn-gps').addEventListener('click', () => {
+    if (!navigator.geolocation) { $('txt-ubicacion').textContent = 'Este navegador no tiene GPS'; return; }
+    $('txt-ubicacion').textContent = 'Buscando…';
+    navigator.geolocation.getCurrentPosition((pos) => {
+      cfg.lat = pos.coords.latitude;
+      cfg.lng = pos.coords.longitude;
+      cfg.lugar = VIGIA.lugarMasCercano(catalogo.lugares, cfg.lat, cfg.lng).id;
+      VIGIA.guardar(CLAVE, cfg);
+      llenarFormulario();
+    }, (err) => { $('txt-ubicacion').textContent = 'No se pudo: ' + err.message; }, { enableHighAccuracy: true, timeout: 15000 });
+  });
+  $('btn-iniciar').addEventListener('click', calibrarEIniciar);
+  $('btn-recalibrar').addEventListener('click', calibrar);
+  $('btn-restablecer').addEventListener('click', () => restablecer('manual'));
+  $('btn-config').addEventListener('click', () => { monitoreando = false; mostrarConfig(); });
+
+  window.addEventListener('devicemotion', alMoverse);
+  if (navigator.getBattery) navigator.getBattery().then((b) => { bateria = b; }).catch(() => {});
+  setInterval(evaluar, 1000);
+}
+
+iniciarPagina();

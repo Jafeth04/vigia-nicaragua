@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VIGÍA · Panel de coordinación</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body class="pagina-panel">
+
+  <header class="panel-cabecera">
+    <div class="marca">VIGÍA <small>Panel de coordinación · COMUPRED</small></div>
+    <div id="recursos" class="recursos"></div>
+    <span id="conexion" class="pastilla">…</span>
+  </header>
+
+  <div id="banner-sismo" class="banner-sismo" hidden></div>
+
+  <main class="panel-cuerpo">
+    <div id="mapa" class="mapa"></div>
+    <aside class="panel-lateral">
+      <section>
+        <h2>Prioridades <small>(el sistema recomienda, tú decides)</small></h2>
+        <ol id="ranking" class="ranking"></ol>
+      </section>
+      <section>
+        <h2>Bitácora</h2>
+        <ul id="bitacora" class="bitacora"></ul>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="panel-pie">
+    <span id="resumen-nodos" class="resumen-nodos"></span>
+    <div class="controles">
+      <button data-escenario="sismo_costa">🌐 Sismo costa Pacífico (M7.6)</button>
+      <button data-escenario="sismo_managua">🌐 Sismo falla de Managua (M6.2)</button>
+      <button data-escenario="lluvia">🌧️ Lluvia intensa</button>
+      <button data-escenario="reportes">📨 Reportes de prueba</button>
+      <label class="check"><input id="modo-demo" type="checkbox"> Modo demo (1 nodo confirma el sismo)</label>
+      <button id="btn-reiniciar" class="peligro">Reiniciar todo</button>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/comun.js"></script>
+  <script src="/static/panel.js"></script>
+</body>
+</html>

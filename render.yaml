@@ -1,0 +1,12 @@
+# Despliegue en Render (https://render.com): New → Blueprint → elegir este repositorio.
+services:
+  - type: web
+    name: vigia-nicaragua
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/catalogo
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8

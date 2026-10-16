@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VIGÍA</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body class="pagina-inicio">
+  <h1>VIGÍA</h1>
+  <p>Celulares olvidados que vigilan tu comunidad y ayudan a decidir a quién rescatar primero.</p>
+
+  <div class="apps">
+    <a class="app" href="/nodo"><b>📡 Nodo sensor</b><span>Abre esto en el celular en desuso que va fijo en la estructura, la ladera o el río.</span></a>
+    <a class="app" href="/comunidad"><b>🆘 Comunidad</b><span>Para vecinos y brigadistas: reportar y recibir alertas.</span></a>
+    <a class="app" href="/panel"><b>🗺️ Panel de coordinación</b><span>Para COMUPRED / COE: mapa, prioridades y recursos.</span></a>
+  </div>
+
+  <section class="tarjeta">
+    <h2>Dirección para los celulares</h2>
+    <p>Los sensores solo funcionan con <b>HTTPS</b>. Abre en cada celular:</p>
+    <p><code id="direccion"></code></p>
+    <p class="ayuda">Si esta dirección empieza con <code>http://</code>, usa el túnel HTTPS descrito en el LEEME.</p>
+  </section>
+
+  <script>
+    document.getElementById('direccion').textContent = location.origin;
+  </script>
+</body>
+</html>
