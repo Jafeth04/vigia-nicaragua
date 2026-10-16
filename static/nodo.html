@@ -2,89 +2,120 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#000000">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090d12">
   <title>VIGÍA · Nodo sensor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/static/estilos.css">
 </head>
-<body class="pagina-nodo">
+<body class="nodo">
 
-  <section id="vista-config" class="nodo-config">
-    <h1>VIGÍA <small>Nodo sensor</small></h1>
-    <p id="aviso-seguro" class="aviso" hidden>
-      ⚠️ Esta página no está en HTTPS: el navegador no entregará los sensores.
-      Ábrela con la dirección <b>https://</b> del túnel (ver LEEME).
-    </p>
-
-    <label>Nombre del nodo
-      <input id="cfg-nombre" placeholder="Ej.: Escuela Rubén Darío">
-    </label>
-
-    <label>Modo
-      <select id="cfg-modo">
-        <option value="estructura">🏫 Estructura (sismo)</option>
-        <option value="ladera">⛰️ Ladera (deslizamiento / lahar)</option>
-        <option value="rio">🌊 Río (nivel de agua)</option>
-      </select>
-    </label>
-
-    <label>Tipo de lugar
-      <select id="cfg-tipo">
-        <option value="escuela">Escuela</option>
-        <option value="hospital">Hospital / centro de salud</option>
-        <option value="asilo">Hogar de ancianos</option>
-        <option value="edificio">Edificio / mercado</option>
-        <option value="casa">Vivienda</option>
-        <option value="puente">Puente</option>
-        <option value="ladera">Ladera</option>
-        <option value="rio">Río</option>
-        <option value="otro">Otro</option>
-      </select>
-    </label>
-
-    <label>Personas aprox. en el lugar (o que viven debajo / río abajo)
-      <input id="cfg-personas" type="number" min="0" inputmode="numeric">
-    </label>
-
-    <label>Zona
-      <select id="cfg-lugar"></select>
-    </label>
-    <div class="fila">
-      <button id="btn-gps" type="button" class="secundario">📍 Usar GPS</button>
-      <small id="txt-ubicacion"></small>
+  <header class="barra-movil">
+    <div class="marca">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="3.4" fill="currentColor"/><path d="M10 10a8.5 8.5 0 0 0 0 12M22 10a8.5 8.5 0 0 1 0 12M5.5 5.5a14.8 14.8 0 0 0 0 21M26.5 5.5a14.8 14.8 0 0 1 0 21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div><b>VIGÍA</b><span>Nodo sensor</span></div>
     </div>
+    <span id="ind-conexion" class="conexion">Sin iniciar</span>
+  </header>
 
-    <fieldset id="cfg-rio" hidden>
-      <legend>Brazo con flotador</legend>
-      <label>Largo del brazo (cm) <input id="cfg-brazo" type="number" min="1"></label>
-      <label>Alerta amarilla desde (cm de subida) <input id="cfg-umbral-am" type="number" min="1"></label>
-      <label>Alerta roja desde (cm de subida) <input id="cfg-umbral-rojo" type="number" min="1"></label>
-      <label class="check"><input id="cfg-invertir" type="checkbox"> Invertir sentido (si al subir el agua el nivel baja)</label>
-    </fieldset>
+  <main class="movil">
+    <section id="vista-config" style="display:grid;gap:16px;padding-top:16px">
+      <p id="aviso-seguro" class="aviso" hidden>
+        Esta página no está en HTTPS: el navegador no entregará los sensores. Ábrela con la dirección https://.
+      </p>
 
-    <button id="btn-iniciar" class="grande">Calibrar e iniciar</button>
-    <p class="ayuda">Fija el celular <b>firmemente</b> a la estructura (columna, estaca o brazo del flotador).
-      Durante la calibración (5 s) no debe moverse. El motor de vibración y la pantalla
-      no se usan: la pantalla queda en negro para ahorrar batería.</p>
-  </section>
+      <div class="tarjeta">
+        <h2 class="titulo-seccion">¿Qué va a vigilar este celular?</h2>
+        <div class="modos" role="radiogroup">
+          <label class="modo"><input type="radio" name="modo" value="estructura">
+            <span class="ico" aria-hidden="true">🏫</span><b>Estructura</b><small>Sismos e inclinación de columnas y paredes</small></label>
+          <label class="modo"><input type="radio" name="modo" value="ladera">
+            <span class="ico" aria-hidden="true">⛰️</span><b>Ladera</b><small>Deslizamientos lentos y lahares</small></label>
+          <label class="modo"><input type="radio" name="modo" value="rio">
+            <span class="ico" aria-hidden="true">🌊</span><b>Río</b><small>Nivel del agua con un brazo y flotador</small></label>
+        </div>
+      </div>
 
-  <section id="vista-monitor" class="nodo-monitor" hidden>
-    <div class="nodo-titulo"><span id="txt-nombre"></span><span id="ind-conexion" class="pastilla">…</span></div>
-    <div id="semaforo" class="semaforo verde">
-      <span id="txt-estado">VERDE</span>
-      <small id="txt-motivo">Todo normal</small>
-    </div>
-    <dl id="lecturas" class="lecturas"></dl>
-    <div class="nodo-indicadores">
-      <span id="ind-hz"></span><span id="ind-bateria"></span><span id="ind-cola"></span>
-    </div>
-    <ol id="registro" class="registro"></ol>
-    <div class="nodo-botones">
-      <button id="btn-restablecer">Restablecer alarma</button>
-      <button id="btn-recalibrar">Recalibrar</button>
-      <button id="btn-config">Configurar</button>
-    </div>
-  </section>
+      <div class="tarjeta">
+        <h2 class="titulo-seccion">Dónde está instalado</h2>
+        <label class="campo">Nombre del nodo
+          <input id="cfg-nombre" placeholder="Ej.: Escuela Rubén Darío, columna norte">
+        </label>
+        <div class="dos-col">
+          <label class="campo">Tipo de lugar
+            <select id="cfg-tipo">
+              <option value="escuela">Escuela</option>
+              <option value="hospital">Hospital / salud</option>
+              <option value="asilo">Hogar de ancianos</option>
+              <option value="edificio">Edificio / mercado</option>
+              <option value="casa">Vivienda</option>
+              <option value="puente">Puente</option>
+              <option value="ladera">Ladera</option>
+              <option value="rio">Río</option>
+              <option value="otro">Otro</option>
+            </select>
+          </label>
+          <label class="campo">Personas cerca
+            <input id="cfg-personas" type="number" min="0" inputmode="numeric">
+          </label>
+        </div>
+        <label class="campo">Zona
+          <select id="cfg-lugar"></select>
+        </label>
+        <div class="fila">
+          <button id="btn-gps" type="button" class="btn btn-pequeno">📍 Usar GPS</button>
+          <small id="txt-ubicacion" class="ayuda"></small>
+        </div>
+      </div>
+
+      <div id="cfg-rio" class="tarjeta" hidden>
+        <h2 class="titulo-seccion">Brazo con flotador</h2>
+        <label class="campo">Largo del brazo (cm) <input id="cfg-brazo" type="number" min="1" inputmode="decimal"></label>
+        <div class="dos-col">
+          <label class="campo">Precaución desde (cm) <input id="cfg-umbral-am" type="number" min="1" inputmode="decimal"></label>
+          <label class="campo">Alerta desde (cm) <input id="cfg-umbral-rojo" type="number" min="1" inputmode="decimal"></label>
+        </div>
+        <label class="check"><input id="cfg-invertir" type="checkbox"> Invertir sentido (si al subir el agua el nivel baja)</label>
+      </div>
+
+      <button id="btn-iniciar" class="btn btn-primario btn-grande">Calibrar e iniciar</button>
+      <p class="ayuda">Fija el celular firmemente a la columna, la estaca o el brazo del flotador. Durante la calibración (5 s) no debe moverse.</p>
+    </section>
+
+    <section id="vista-monitor" class="monitor" style="display:grid;gap:14px" hidden>
+      <div class="monitor-cab">
+        <div><b id="txt-nombre"></b><span id="txt-modo"></span></div>
+      </div>
+
+      <div id="semaforo" class="estado-nodo verde" role="status" aria-live="polite">
+        <span class="foco" aria-hidden="true"></span>
+        <div><b id="txt-estado">NORMAL</b><small id="txt-motivo">Todo normal</small></div>
+      </div>
+
+      <div class="sismografo">
+        <canvas id="sismografo" aria-label="Movimiento en vivo"></canvas>
+        <span><span>Movimiento en vivo</span><span id="escala-sismografo">±0,5 m/s²</span></span>
+      </div>
+
+      <dl id="lecturas" class="lecturas"></dl>
+
+      <div class="indicadores">
+        <span id="ind-hz"></span><span id="ind-bateria"></span><span id="ind-cola"></span>
+      </div>
+
+      <div class="tarjeta">
+        <h2 class="titulo-seccion">Eventos</h2>
+        <ol id="registro" class="registro"></ol>
+      </div>
+
+      <div class="acciones-nodo">
+        <button id="btn-restablecer" class="btn">Restablecer</button>
+        <button id="btn-recalibrar" class="btn">Recalibrar</button>
+        <button id="btn-config" class="btn">Configurar</button>
+      </div>
+    </section>
+  </main>
 
   <script src="/static/comun.js"></script>
   <script src="/static/nodo.js"></script>

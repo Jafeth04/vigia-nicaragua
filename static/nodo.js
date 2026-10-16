@@ -83,6 +83,7 @@ function alMoverse(e) {
   const componenteV = Math.abs(v);
   const componenteH = norma(restar(lineal, escalar(vertical, v)));
   const magnitud = norma(lineal);
+  guardarTraza(v, punto(lineal, ejeHorizontal));
 
   actualizarStaLta(componenteV, componenteH, magnitud, dt);
   if (cfg.modo !== 'rio') detectarSismo(t, magnitud);
@@ -274,6 +275,10 @@ async function calibrar() {
   }
   g0 = escalar(calibrando.suma, 1 / calibrando.n);
   g = [...g0];
+  // Eje horizontal fijo para dibujar el sismógrafo: el eje X del celular proyectado al plano horizontal.
+  const u0 = unitario(g0);
+  ejeHorizontal = unitario(restar([1, 0, 0], escalar(u0, punto([1, 0, 0], u0))));
+  if (norma(ejeHorizontal) < 0.5) ejeHorizontal = unitario(restar([0, 1, 0], escalar(u0, punto([0, 1, 0], u0))));
   calibrando = null;
   Object.keys(sl).forEach((k) => { sl[k] = 0; });
   historial = [];
@@ -302,45 +307,104 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && monitoreando) mantenerPantallaEncendida();
 });
 
+// ---------- Sismógrafo en vivo ----------
+const TRAZA = 600; // ~10 s a 60 lecturas/s
+const trazaV = new Float32Array(TRAZA);
+const trazaH = new Float32Array(TRAZA);
+let trazaPos = 0;
+let ejeHorizontal = [1, 0, 0];
+
+function guardarTraza(v, h) {
+  trazaV[trazaPos] = v;
+  trazaH[trazaPos] = h;
+  trazaPos = (trazaPos + 1) % TRAZA;
+}
+
+let ultimoDibujo = 0;
+function dibujarSismografo(ahora) {
+  requestAnimationFrame(dibujarSismografo);
+  if ($('vista-monitor').hidden || ahora - ultimoDibujo < 33) return; // ~30 cuadros por segundo
+  ultimoDibujo = ahora;
+  const lienzo = $('sismografo');
+  const ratio = window.devicePixelRatio || 1;
+  const ancho = lienzo.clientWidth;
+  const alto = lienzo.clientHeight;
+  if (lienzo.width !== Math.round(ancho * ratio)) { lienzo.width = Math.round(ancho * ratio); lienzo.height = Math.round(alto * ratio); }
+  const ctx = lienzo.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, ancho, alto);
+  let maximo = 0.5;
+  for (let i = 0; i < TRAZA; i++) maximo = Math.max(maximo, Math.abs(trazaV[i]), Math.abs(trazaH[i]));
+  $('escala-sismografo').textContent = `±${maximo.toFixed(1).replace('.', ',')} m/s²`;
+  ctx.strokeStyle = 'rgba(140, 153, 170, .25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, alto / 2);
+  ctx.lineTo(ancho, alto / 2);
+  ctx.stroke();
+  const trazar = (datos, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (let i = 0; i < TRAZA; i++) {
+      const x = (i / (TRAZA - 1)) * ancho;
+      const y = alto / 2 - (datos[(trazaPos + i) % TRAZA] / maximo) * (alto / 2 - 4);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  };
+  trazar(trazaH, 'rgba(245, 184, 61, .85)'); // horizontal (ámbar): la onda S se ve aquí
+  trazar(trazaV, '#46b9f5'); // vertical (celeste): la onda P se ve aquí
+}
+
 // ---------- Interfaz ----------
 const ETIQUETAS = {
   inclinacion: ['Inclinación', '°'],
   sacudida: ['Sacudida ahora', 'm/s²'],
   pga: ['Pico de sacudida', 'm/s²'],
-  sta_lta: ['STA/LTA (disparo > 4)', ''],
+  sta_lta: ['STA/LTA · dispara >4', ''],
   vel_inclinacion: ['Velocidad', '°/min'],
   vibracion: ['Vibración del suelo', 'm/s²'],
   nivel_cm: ['Nivel del agua', 'cm'],
   vel_nivel: ['Subida', 'cm/min'],
-  ruido: ['Ruido de fondo (vertical)', 'm/s²'],
+  ruido: ['Ruido de fondo', 'm/s²'],
   hz: ['Lecturas por segundo', ''],
 };
+const NOMBRE_MODO = { estructura: '🏫 Estructura · sismo e inclinación', ladera: '⛰️ Ladera · deslizamiento y lahar', rio: '🌊 Río · nivel del agua' };
+const NOMBRE_NIVEL = { verde: 'NORMAL', amarillo: 'PRECAUCIÓN', rojo: 'ALERTA' };
 
 function pintar() {
   if ($('vista-monitor').hidden) return;
-  $('txt-nombre').textContent = `${cfg.nombre || cfg.id} · ${$('cfg-modo').selectedOptions[0].textContent}`;
-  const semaforo = $('semaforo');
-  semaforo.className = `semaforo ${alarma.nivel}`;
-  $('txt-estado').textContent = calibrando ? 'CALIBRANDO' : alarma.nivel.toUpperCase();
+  $('txt-nombre').textContent = cfg.nombre || cfg.id;
+  $('txt-modo').textContent = NOMBRE_MODO[cfg.modo];
+  $('semaforo').className = `estado-nodo ${calibrando ? 'calibrando' : alarma.nivel}`;
+  $('txt-estado').textContent = calibrando ? 'CALIBRANDO' : NOMBRE_NIVEL[alarma.nivel];
   $('txt-motivo').textContent = alarma.motivo;
   $('lecturas').innerHTML = Object.entries(lectura).map(([k, v]) => {
     const [nombre, unidad] = ETIQUETAS[k] || [k, ''];
-    return `<dt>${nombre}</dt><dd>${v.toFixed(2)} ${unidad}</dd>`;
+    const decimales = k === 'hz' ? 0 : k === 'nivel_cm' ? 1 : 2;
+    return `<div class="lectura"><dt>${nombre}</dt><dd>${v.toFixed(decimales)}<span>${unidad}</span></dd></div>`;
   }).join('');
   const conectado = conexion && conexion.conectado;
-  $('ind-conexion').textContent = conectado ? '● En línea' : '○ Sin conexión';
-  $('ind-conexion').className = `pastilla ${conectado ? 'ok' : 'mal'}`;
+  $('ind-conexion').textContent = conectado ? 'En línea' : 'Sin conexión';
+  $('ind-conexion').className = `conexion ${conectado ? 'ok' : 'mal'}`;
   $('ind-hz').textContent = `${hz} lecturas/s`;
-  $('ind-bateria').textContent = bateria ? `🔋 ${Math.round(bateria.level * 100)}%${bateria.charging ? ' ⚡' : ''}` : '';
-  $('ind-cola').textContent = conexion && conexion.pendientes ? `📦 ${conexion.pendientes} en cola` : '';
+  $('ind-bateria').textContent = bateria ? `Batería ${Math.round(bateria.level * 100)}%${bateria.charging ? ' · cargando' : ''}` : '';
+  $('ind-cola').textContent = conexion && conexion.pendientes ? `${conexion.pendientes} mensajes en cola` : '';
 }
 
 function anotar(texto) {
   const li = document.createElement('li');
-  li.textContent = `${VIGIA.hora(Date.now())} ${texto}`;
+  const hora = document.createElement('time');
+  hora.textContent = VIGIA.hora(Date.now());
+  const span = document.createElement('span');
+  span.textContent = texto;
+  li.append(hora, span);
   $('registro').prepend(li);
   while ($('registro').children.length > 8) $('registro').lastChild.remove();
 }
+
+const modoElegido = () => (document.querySelector('input[name="modo"]:checked') || { value: 'estructura' }).value;
 
 function alertaEnPagina(texto) {
   const aviso = $('aviso-seguro');
@@ -361,7 +425,7 @@ function mostrarConfig() {
 
 function llenarFormulario() {
   $('cfg-nombre').value = cfg.nombre;
-  $('cfg-modo').value = cfg.modo;
+  document.querySelector(`input[name="modo"][value="${cfg.modo}"]`).checked = true;
   $('cfg-tipo').value = cfg.tipo_lugar;
   $('cfg-personas').value = cfg.personas;
   $('cfg-lugar').value = cfg.lugar;
@@ -375,7 +439,7 @@ function llenarFormulario() {
 
 function leerFormulario() {
   cfg.nombre = $('cfg-nombre').value.trim();
-  cfg.modo = $('cfg-modo').value;
+  cfg.modo = modoElegido();
   cfg.tipo_lugar = $('cfg-tipo').value;
   cfg.personas = Number($('cfg-personas').value) || 0;
   if ($('cfg-lugar').value !== cfg.lugar) { cfg.lat = null; cfg.lng = null; } // cambió la zona a mano
@@ -393,7 +457,9 @@ async function iniciarPagina() {
   $('cfg-lugar').innerHTML = catalogo.lugares.map((l) => `<option value="${l.id}">${VIGIA.esc(l.nombre)}</option>`).join('');
   llenarFormulario();
 
-  $('cfg-modo').addEventListener('change', () => { $('cfg-rio').hidden = $('cfg-modo').value !== 'rio'; });
+  document.querySelectorAll('input[name="modo"]').forEach((radio) => radio.addEventListener('change', () => {
+    $('cfg-rio').hidden = modoElegido() !== 'rio';
+  }));
   $('btn-gps').addEventListener('click', () => {
     if (!navigator.geolocation) { $('txt-ubicacion').textContent = 'Este navegador no tiene GPS'; return; }
     $('txt-ubicacion').textContent = 'Buscando…';
@@ -413,6 +479,7 @@ async function iniciarPagina() {
   window.addEventListener('devicemotion', alMoverse);
   if (navigator.getBattery) navigator.getBattery().then((b) => { bateria = b; }).catch(() => {});
   setInterval(evaluar, 1000);
+  requestAnimationFrame(dibujarSismografo);
 }
 
 iniciarPagina();

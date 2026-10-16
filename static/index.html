@@ -3,26 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d12">
   <title>VIGÍA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/static/estilos.css">
 </head>
-<body class="pagina-inicio">
-  <h1>VIGÍA</h1>
-  <p>Celulares olvidados que vigilan tu comunidad y ayudan a decidir a quién rescatar primero.</p>
+<body>
+  <main class="inicio">
+    <header>
+      <div class="marca">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="3.4" fill="currentColor"/><path d="M10 10a8.5 8.5 0 0 0 0 12M22 10a8.5 8.5 0 0 1 0 12M5.5 5.5a14.8 14.8 0 0 0 0 21M26.5 5.5a14.8 14.8 0 0 1 0 21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <div><b>VIGÍA</b><span>Nicaragua</span></div>
+      </div>
+      <h1 style="margin-top:1.4rem">Celulares olvidados que vigilan tu comunidad</h1>
+      <p class="lema">Sensores hechos con celulares en desuso y un centro de coordinación que ayuda a decidir a quién atender primero después de un desastre.</p>
+    </header>
 
-  <div class="apps">
-    <a class="app" href="/nodo"><b>📡 Nodo sensor</b><span>Abre esto en el celular en desuso que va fijo en la estructura, la ladera o el río.</span></a>
-    <a class="app" href="/comunidad"><b>🆘 Comunidad</b><span>Para vecinos y brigadistas: reportar y recibir alertas.</span></a>
-    <a class="app" href="/panel"><b>🗺️ Panel de coordinación</b><span>Para COMUPRED / COE: mapa, prioridades y recursos.</span></a>
-  </div>
+    <div class="apps">
+      <a class="app-tarjeta" href="/panel"><span class="etq info">COMUPRED · COE</span><b>🗺️ Centro de coordinación</b><span>Mapa, prioridades explicadas y asignación de recursos.</span></a>
+      <a class="app-tarjeta" href="/nodo"><span class="etq ok">Celular en desuso</span><b>📡 Nodo sensor</b><span>Se fija en una estructura, una ladera o un río y vigila día y noche.</span></a>
+      <a class="app-tarjeta" href="/comunidad"><span class="etq warn">Vecinos y brigadas</span><b>🆘 Comunidad</b><span>Reportar emergencias aun sin señal y recibir alertas con cuenta regresiva.</span></a>
+    </div>
 
-  <section class="tarjeta">
-    <h2>Dirección para los celulares</h2>
-    <p>Los sensores solo funcionan con <b>HTTPS</b>. Abre en cada celular:</p>
-    <p><code id="direccion"></code></p>
-    <p class="ayuda">Si esta dirección empieza con <code>http://</code>, usa el túnel HTTPS descrito en el LEEME.</p>
-  </section>
-
+    <section class="caja">
+      <h2 class="titulo-seccion">Dirección para los celulares</h2>
+      <p>Los sensores solo funcionan con HTTPS. Abre en cada celular:</p>
+      <code id="direccion"></code>
+    </section>
+  </main>
   <script>
     document.getElementById('direccion').textContent = location.origin;
   </script>

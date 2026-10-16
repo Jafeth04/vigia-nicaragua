@@ -33,7 +33,7 @@ function nuevoReporte() {
     id: VIGIA.uid(),
     tipo: tipoElegido,
     personas: Number($('personas').value) || 1,
-    lugar: $('lugar').value,
+    lugar: (document.querySelector('input[name="lugar"]:checked') || { value: 'casa' }).value,
     descripcion: $('descripcion').value.trim(),
     foto: fotoActual,
     lat: pos.lat,
@@ -94,18 +94,24 @@ function marcarEnHistorial(id, estado) {
   VIGIA.guardar(CLAVE_HISTORIAL, historial);
 }
 
-const TEXTO_ESTADO = { pendiente: '⏳ En cola', enviado: '✅ Recibido', sms: '✉️ Enviado por SMS', rechazado: '❌ Rechazado' };
+const ESTADO_REPORTE = {
+  pendiente: ['warn', 'En cola'],
+  enviado: ['ok', 'Recibido'],
+  sms: ['info', 'Por SMS'],
+  rechazado: ['crit', 'Rechazado'],
+};
 
 function pintarHistorial() {
   const historial = VIGIA.leer(CLAVE_HISTORIAL, []);
   $('mis-reportes').innerHTML = historial.map((h) => {
     const tipo = catalogo.tipos_reporte[h.tipo];
-    return `<li><span>${tipo.emoji} ${VIGIA.esc(tipo.nombre)} · ${h.personas} pers.</span>
-      <small>${VIGIA.hora(h.creado)} · ${TEXTO_ESTADO[h.estado] || h.estado}</small></li>`;
+    const [clase, texto] = ESTADO_REPORTE[h.estado] || ['off', h.estado];
+    return `<li><span>${tipo.emoji} ${VIGIA.esc(tipo.nombre)}</span><span class="etq ${clase}">${texto}</span>
+      <small>${VIGIA.hora(h.creado)} · ${h.personas} ${h.personas === 1 ? 'persona' : 'personas'}</small></li>`;
   }).join('') || '<li><small>Aún no enviaste reportes.</small></li>';
   const pendientes = VIGIA.leer(CLAVE_COLA, []).length;
   $('estado-cola').textContent = pendientes
-    ? `⏳ ${pendientes} reporte(s) esperando señal. Se enviarán solos.`
+    ? `${pendientes} ${pendientes === 1 ? 'reporte espera' : 'reportes esperan'} señal. Se enviarán solos.`
     : '';
 }
 
@@ -138,6 +144,7 @@ function elegirTipo(tipo) {
   $('titulo-detalle').textContent = `${t.emoji} ${t.nombre}`;
   $('personas').value = 1;
   $('descripcion').value = '';
+  document.querySelector('input[name="lugar"][value="casa"]').checked = true;
   fotoActual = null;
   $('vista-foto').hidden = true;
   $('paso-tipo').hidden = true;
@@ -196,12 +203,14 @@ async function activarSonido() {
     setTimeout(() => { if (!alertaActual) detenerSirena(); }, 700); // pitido corto de confirmación
     sonidoActivo = true;
     hablar('Alertas activadas');
-    $('btn-alertas').textContent = '🔔 Alertas con sonido activadas';
-    $('btn-alertas').classList.add('activo');
-    $('aviso-sonido').hidden = true;
+    $('estado-alertas').className = 'estado-alertas activa';
+    $('alertas-icono').textContent = '🔔';
+    $('alertas-titulo').textContent = 'Alertas activas';
+    $('alertas-texto').textContent = 'Sonará la sirena y una voz te avisará. Deja esta página abierta: con la pantalla bloqueada el navegador no puede sonar.';
     mantenerPantalla();
   } catch (e) {
-    $('btn-alertas').textContent = '🔇 No se pudo activar el sonido. Toca de nuevo';
+    $('alertas-titulo').textContent = 'No se pudo activar el sonido';
+    $('alertas-texto').textContent = 'Toca «Activar alertas» otra vez. Si sigue sin sonar, revisa el volumen del celular.';
   }
 }
 
@@ -247,9 +256,11 @@ function alertaSismo(msg) {
   const nueva = !alertaActual || alertaActual.id !== msg.id;
   const pos = miPosicion();
   const distancia = VIGIA.distanciaKm(pos.lat, pos.lng, msg.lat, msg.lng);
-  alertaActual = { ...msg, distancia, llegadaS: msg.t0 + (distancia / msg.vs) * 1000 };
+  const llegadaS = msg.t0 + (distancia / msg.vs) * 1000;
+  const total = nueva ? Math.max(1, (llegadaS - VIGIA.ahora()) / 1000) : alertaActual.total;
+  alertaActual = { ...msg, distancia, llegadaS, total };
   $('alerta-sismo').hidden = false;
-  $('alerta-titulo').textContent = msg.prueba ? '⚠️ PRUEBA DE ALERTA' : '⚠️ SISMO DETECTADO';
+  $('alerta-titulo').textContent = msg.prueba ? 'PRUEBA DE ALERTA' : 'SISMO DETECTADO';
   $('alerta-sonido').hidden = sonidoActivo;
   if (nueva) {
     if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 600, 200, 600]); // Android; iPhone no vibra desde la web
@@ -269,15 +280,20 @@ function tickAlerta() {
   if (!alertaActual) return;
   const restante = (alertaActual.llegadaS - VIGIA.ahora()) / 1000;
   const lejos = alertaActual.distancia > 250;
+  const circunferencia = 326.7;
+  const fraccion = Math.max(0, Math.min(1, restante / alertaActual.total));
+  $('anillo-avance').setAttribute('stroke-dashoffset', String(circunferencia * (1 - fraccion)));
   if (restante > 0) {
     anuncioAhora = false;
-    $('alerta-cuenta').textContent = `${Math.ceil(restante)} s`;
+    $('alerta-cuenta').textContent = Math.ceil(restante);
+    $('alerta-unidad').textContent = 'segundos';
     $('alerta-texto').textContent = lejos
-      ? `Sismo lejano (a ${alertaActual.distancia.toFixed(0)} km). Puede sentirse leve.`
-      : `La sacudida fuerte llega en ${Math.ceil(restante)} segundos · origen a ${alertaActual.distancia.toFixed(0)} km`;
+      ? `Sismo lejano, a ${alertaActual.distancia.toFixed(0)} km. Puede sentirse leve.`
+      : `Para que llegue la sacudida fuerte. El origen está a ${alertaActual.distancia.toFixed(0)} km.`;
   } else {
-    $('alerta-cuenta').textContent = '¡AHORA!';
-    $('alerta-texto').textContent = 'Protégete ya. Cuando pase, sal con calma y reporta daños.';
+    $('alerta-cuenta').textContent = '¡YA!';
+    $('alerta-unidad').textContent = 'protégete';
+    $('alerta-texto').textContent = 'Cuando pase el movimiento, sal con calma y reporta los daños.';
     if (!anuncioAhora) { anuncioAhora = true; hablar('Ahora. Protégete.'); }
   }
   if (restante < -20 && !sirena.paused) detenerSirena();
@@ -310,8 +326,13 @@ function alertaZona(msg) {
 
 // ---------- Inicio ----------
 function pintarConexion(ok) {
-  $('conexion').textContent = ok ? '● En línea' : '○ Sin conexión';
-  $('conexion').className = `pastilla ${ok ? 'ok' : 'mal'}`;
+  $('conexion').textContent = ok ? 'En línea' : 'Sin conexión';
+  $('conexion').className = `conexion ${ok ? 'ok' : 'mal'}`;
+}
+
+function pintarZona() {
+  const lugar = catalogo.lugares.find((l) => l.id === cfg.zona);
+  $('resumen-zona').textContent = `${lugar ? lugar.nombre : ''}${cfg.lat !== null ? ' · GPS' : ''}`;
 }
 
 async function iniciar() {
@@ -321,8 +342,11 @@ async function iniciar() {
   $('numero-sms').value = cfg.numeroSms;
   if (cfg.lat !== null) $('txt-gps').textContent = `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}`;
 
+  const graves = new Set(['atrapados', 'heridos', 'deslizamiento']);
   $('tipos').innerHTML = Object.entries(catalogo.tipos_reporte).map(([k, t]) =>
-    `<button class="tipo tipo-${k}" data-tipo="${k}"><span>${t.emoji}</span>${VIGIA.esc(t.nombre)}</button>`).join('');
+    `<button class="tipo tipo-${k} ${graves.has(k) ? 'grave' : ''}" data-tipo="${k}">
+      <span class="tipo-ico" aria-hidden="true">${t.emoji}</span><span class="tipo-nom">${VIGIA.esc(t.nombre)}</span></button>`).join('');
+  pintarZona();
   $('tipos').addEventListener('click', (e) => {
     const boton = e.target.closest('[data-tipo]');
     if (boton) elegirTipo(boton.dataset.tipo);
@@ -333,6 +357,7 @@ async function iniciar() {
     cfg.lat = cfg.lng = null;
     $('txt-gps').textContent = '';
     guardarCfg();
+    pintarZona();
   });
   $('btn-gps').addEventListener('click', () => {
     if (!navigator.geolocation) { $('txt-gps').textContent = 'Sin GPS en este navegador'; return; }
@@ -344,6 +369,7 @@ async function iniciar() {
       $('zona').value = cfg.zona;
       $('txt-gps').textContent = `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}`;
       guardarCfg();
+      pintarZona();
     }, (err) => { $('txt-gps').textContent = 'No se pudo: ' + err.message; }, { enableHighAccuracy: true, timeout: 15000 });
   });
   $('btn-alertas').addEventListener('click', activarSonido);

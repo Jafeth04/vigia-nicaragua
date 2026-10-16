@@ -2,86 +2,118 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#b91c1c">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10161e">
   <title>VIGÍA · Comunidad</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/static/estilos.css">
 </head>
-<body class="pagina-comunidad">
+<body class="comunidad">
 
-  <header class="com-cabecera">
-    <b>VIGÍA</b><span>Comunidad</span>
-    <span id="conexion" class="pastilla">…</span>
+  <header class="barra-movil">
+    <div class="marca">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="3.4" fill="currentColor"/><path d="M10 10a8.5 8.5 0 0 0 0 12M22 10a8.5 8.5 0 0 1 0 12M5.5 5.5a14.8 14.8 0 0 0 0 21M26.5 5.5a14.8 14.8 0 0 1 0 21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div><b>VIGÍA</b><span>Comunidad</span></div>
+    </div>
+    <span id="conexion" class="conexion">Conectando…</span>
   </header>
 
-  <div id="alertas-zona" class="alertas-zona"></div>
-
-  <main class="com-cuerpo">
-    <section class="tarjeta">
-      <label>Mi zona <select id="zona"></select></label>
-      <div class="fila">
-        <button id="btn-gps" class="secundario">📍 Usar mi GPS</button>
-        <small id="txt-gps"></small>
+  <main class="movil">
+    <section id="estado-alertas" class="estado-alertas inactiva" style="margin-top:16px">
+      <span class="icono" id="alertas-icono">🔕</span>
+      <b id="alertas-titulo">Alertas sin activar</b>
+      <p id="alertas-texto">Actívalas para escuchar la sirena si se detecta un sismo o un peligro en tu zona. Deja esta página abierta.</p>
+      <div class="acciones">
+        <button id="btn-alertas" class="btn btn-primario">🔔 Activar alertas</button>
+        <button id="btn-probar" class="btn-texto">Probar alerta (10 s)</button>
       </div>
-      <button id="btn-alertas" class="secundario ancho">🔔 Activar alertas con sonido</button>
-      <p id="aviso-sonido" class="aviso-sonido">Toca «Activar alertas» cada vez que abras esta página y déjala abierta:
-        con la pantalla bloqueada el navegador no puede sonar.</p>
-      <button id="btn-probar" class="enlace">▶ Probar alerta (cuenta regresiva de 10 s)</button>
     </section>
 
-    <section id="paso-tipo" class="tarjeta">
-      <h2>¿Qué está pasando?</h2>
-      <div id="tipos" class="grilla-tipos"></div>
+    <div id="alertas-zona" class="alertas-zona"></div>
+
+    <section id="paso-tipo" style="display:grid;gap:14px">
+      <div class="saludo">
+        <h1>¿Qué está pasando?</h1>
+        <p>Tu reporte llega al comité de emergencias. Si no tienes señal, se guarda y se envía solo.</p>
+      </div>
+      <div id="tipos" class="tipos"></div>
     </section>
 
-    <section id="paso-detalle" class="tarjeta" hidden>
-      <h2 id="titulo-detalle"></h2>
-      <label>¿Cuántas personas?</label>
-      <div class="contador">
-        <button id="menos" type="button">−</button>
-        <output id="personas">1</output>
-        <button id="mas" type="button">+</button>
+    <section id="paso-detalle" class="hoja" hidden>
+      <div class="hoja-cab">
+        <h2 id="titulo-detalle"></h2>
+        <button id="btn-cancelar" class="btn btn-pequeno">Cancelar</button>
       </div>
-      <label>¿Dónde?
-        <select id="lugar">
-          <option value="casa">Casa</option>
-          <option value="escuela">Escuela</option>
-          <option value="hospital">Hospital / centro de salud</option>
-          <option value="asilo">Hogar de ancianos</option>
-          <option value="otro">Otro</option>
-        </select>
-      </label>
-      <label>Detalle (opcional)
+
+      <div class="campo">¿Cuántas personas?
+        <div class="contador">
+          <button id="menos" type="button" aria-label="Una persona menos">−</button>
+          <output id="personas" aria-live="polite">1</output>
+          <button id="mas" type="button" aria-label="Una persona más">+</button>
+        </div>
+      </div>
+
+      <div class="campo">¿Dónde?
+        <div class="lugares" role="radiogroup">
+          <label><input type="radio" name="lugar" value="casa" checked><span>Casa</span></label>
+          <label><input type="radio" name="lugar" value="escuela"><span>Escuela</span></label>
+          <label><input type="radio" name="lugar" value="hospital"><span>Hospital</span></label>
+          <label><input type="radio" name="lugar" value="asilo"><span>Hogar de ancianos</span></label>
+          <label><input type="radio" name="lugar" value="otro"><span>Otro</span></label>
+        </div>
+      </div>
+
+      <label class="campo">Detalle (opcional)
         <textarea id="descripcion" rows="2" maxlength="300" placeholder="Ej.: casa de dos pisos, entrada por el callejón"></textarea>
       </label>
-      <label class="boton-foto secundario">📷 Agregar foto
-        <input id="foto" type="file" accept="image/*" capture="environment" hidden>
-      </label>
-      <img id="vista-foto" class="vista-foto" alt="Foto adjunta" hidden>
-      <button id="btn-enviar" class="grande">ENVIAR REPORTE</button>
-      <a id="btn-sms" class="boton secundario ancho" href="#">✉️ Enviar por SMS (sin internet)</a>
-      <button id="btn-cancelar" class="enlace">Cancelar</button>
+
+      <div class="foto">
+        <label class="btn">📷 Agregar foto<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
+        <img id="vista-foto" class="vista-foto" alt="Foto adjunta" hidden>
+      </div>
+
+      <div class="envio">
+        <button id="btn-enviar" class="btn btn-peligro btn-grande">Enviar reporte</button>
+        <a id="btn-sms" class="btn btn-grande" href="#">✉️ Sin internet: enviar por SMS</a>
+      </div>
     </section>
 
     <section class="tarjeta">
-      <h2>Mis reportes</h2>
+      <h2 class="titulo-seccion">Mis reportes</h2>
       <p id="estado-cola" class="estado-cola"></p>
       <ul id="mis-reportes" class="mis-reportes"></ul>
-      <details>
-        <summary>Número SMS de la central</summary>
-        <input id="numero-sms" type="tel" placeholder="+505 ...">
-        <small>Formato del SMS: VIGIA ATRAPADOS 3 12.1364,-86.2514</small>
-      </details>
     </section>
+
+    <details class="ajustes">
+      <summary>Mi ubicación y ajustes <span id="resumen-zona"></span></summary>
+      <div class="contenido">
+        <label class="campo">Mi zona <select id="zona"></select></label>
+        <div class="fila">
+          <button id="btn-gps" class="btn btn-pequeno">📍 Usar mi GPS</button>
+          <small id="txt-gps" class="ayuda"></small>
+        </div>
+        <label class="campo">Número SMS de la central
+          <input id="numero-sms" type="tel" placeholder="+505 ...">
+        </label>
+        <p class="ayuda">Formato del SMS: <span class="mono">VIGIA ATRAPADOS 3 12.1364,-86.2514</span></p>
+      </div>
+    </details>
   </main>
 
-  <div id="alerta-sismo" class="alerta-sismo" hidden>
-    <div id="alerta-titulo" class="alerta-titulo">⚠️ SISMO DETECTADO</div>
-    <button id="alerta-sonido" class="alerta-sonido" hidden>🔊 Toca para escuchar la alarma</button>
-    <div id="alerta-cuenta" class="alerta-cuenta"></div>
-    <div id="alerta-texto" class="alerta-texto"></div>
-    <div class="alerta-consejo">Agáchate · Cúbrete · Sujétate<br>Aléjate de ventanas</div>
-    <button id="alerta-cerrar">Cerrar</button>
+  <div id="alerta-sismo" class="alerta" role="alertdialog" aria-labelledby="alerta-titulo" hidden>
+    <div id="alerta-titulo" class="alerta-titulo">SISMO DETECTADO</div>
+    <div class="anillo">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="fondo" cx="60" cy="60" r="52"/>
+        <circle id="anillo-avance" class="avance" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="0"/>
+      </svg>
+      <div class="anillo-num"><b id="alerta-cuenta">--</b><span id="alerta-unidad">segundos</span></div>
+    </div>
+    <p id="alerta-texto" class="alerta-texto"></p>
+    <div class="consejos"><span>Agáchate</span><span>Cúbrete</span><span>Sujétate</span></div>
+    <button id="alerta-sonido" class="btn alerta-sonido" hidden>🔊 Toca para escuchar la alarma</button>
+    <button id="alerta-cerrar" class="btn">Cerrar</button>
   </div>
 
   <script src="/static/comun.js"></script>
