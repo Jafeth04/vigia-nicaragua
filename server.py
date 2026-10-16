@@ -150,6 +150,8 @@ async def actualizar_estado_nodo(nodo, msg):
         nodo["atendido_por"] = None
         E.registrar(f"🟢 {nodo['nombre']} volvió a la normalidad")
         return
+    if nuevo == "rojo":
+        nodo["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza, vuelve al ranking
     E.registrar(f"{'🔴' if nuevo == 'rojo' else '🟡'} {nodo['nombre']}: {nodo['motivo']}", nuevo)
     if nodo["modo"] in ("ladera", "rio"):
         zona = LUGARES_POR_ID[nodo["zona"]]["nombre"]
