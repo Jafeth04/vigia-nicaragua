@@ -76,7 +76,10 @@ function alMoverse(e) {
   if (!monitoreando) return;
 
   // Gravedad = promedio lento (≈1 s). Lo que sobra es movimiento.
-  g = sumar(g, escalar(restar(ac, g), Math.min(1, dt / 1.0)));
+  // Mientras el celular vibra (temblor, golpe, lodo), la sacudida "contamina" ese promedio
+  // y parece inclinación. Entonces la gravedad casi se congela (≈30 s) hasta que pase.
+  const agitado = evento || sl.staM > Math.max(0.15, 3 * sl.ltaM);
+  g = sumar(g, escalar(restar(ac, g), Math.min(1, dt / (agitado ? 30 : 1.0))));
   const lineal = restar(ac, g);
   const vertical = unitario(g0); // el nodo está fijo: la vertical es la gravedad calibrada
   const v = punto(lineal, vertical);
@@ -224,6 +227,7 @@ function enviarEstado() {
   conexion.enviar({
     tipo: 'estado', id: cfg.id, estado: alarma.nivel, motivo: alarma.motivo, valores,
     bateria: bateria ? Math.round(bateria.level * 100) : null,
+    cargando: bateria ? bateria.charging : null,
   }, { encolar: alarma.nivel !== nivelEnviado }); // los cambios de estado se encolan; las lecturas repetidas no
   nivelEnviado = alarma.nivel;
   ultimoEnvio = ahora;

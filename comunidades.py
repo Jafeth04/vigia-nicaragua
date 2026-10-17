@@ -21,6 +21,7 @@ INC_MOVIMIENTO = 0.5  # grados de inclinación, ya compensados con R
 VEL_MOVIMIENTO = 0.2  # grados por minuto
 VIB_MOVIMIENTO = 0.15  # m/s² de vibración continua del terreno
 INC_REFERENCIA_MOVIDA = 1.0  # si R se inclina más que esto, su anclaje está mal
+BATERIA_BAJA = 20  # % : por debajo, el comité debe ir a revisar el panel solar o cambiar la batería
 SOSTENER_S = 10  # prototipo: segundos. En campo serían minutos, ajustados con las pruebas de ángulo.
 
 NIVELES = ("normal", "atencion", "alerta")
@@ -73,6 +74,16 @@ class Comunidades:
         motivos = []
         detalle = {}
 
+        # Batería baja en cualquiera de los tres (si no se está cargando)
+        bateria_baja = []
+        for rol in ("A", "B", "R"):
+            n = sensores.get(rol)
+            if n is None or estado_efectivo(n, ahora) == "caido":
+                continue
+            nivel_bateria = n.get("bateria")
+            if isinstance(nivel_bateria, (int, float)) and nivel_bateria < BATERIA_BAJA and not n.get("cargando"):
+                bateria_baja.append((rol, int(nivel_bateria)))
+
         # Referencia
         r = sensores.get("R")
         r_viva = r is not None and estado_efectivo(r, ahora) != "caido"
@@ -92,7 +103,8 @@ class Comunidades:
         r_vibra = r_viva and vib_r >= VIB_MOVIMIENTO
         if r is not None:
             detalle["R"] = {"id": r["id"], "nombre": r["nombre"], "conectado": r_viva,
-                            "inclinacion": round(inc_r, 2), "vibracion": round(vib_r, 2), "vibra": r_vibra}
+                            "inclinacion": round(inc_r, 2), "vibracion": round(vib_r, 2), "vibra": r_vibra,
+                            "bateria": r.get("bateria")}
 
         # Sensores de ladera
         movidos, vibrando, caidos = [], [], []
@@ -117,6 +129,7 @@ class Comunidades:
                 "inclinacion": round(inc, 2), "inclinacion_compensada": round(inc_c, 2),
                 "velocidad": round(vel, 2), "vibracion": round(vib_c, 2),
                 "movimiento": mov_sostenido, "en_observacion": se_mueve and not mov_sostenido,
+                "bateria": n.get("bateria"),
             }
             if not vivo:
                 caidos.append(rol)
@@ -132,8 +145,10 @@ class Comunidades:
             nivel = "alerta"
             detalle_mov = "; ".join(f"{rol}: {inc:.1f}° ({vel:.1f}°/min)" for rol, inc, vel in movidos)
             motivos.insert(0, f"A y B se mueven a la vez: deslizamiento probable ({detalle_mov})")
-        elif movidos or vibrando or caidos:
+        elif movidos or vibrando or caidos or bateria_baja:
             nivel = "atencion"
+            for rol, porcentaje in bateria_baja:
+                motivos.append(f"El sensor {rol} tiene batería baja ({porcentaje} %): revisar el panel solar")
             for rol, inc, vel in movidos:
                 otro = "B" if rol == "A" else "A"
                 motivos.insert(0, f"Solo {rol} se mueve ({inc:.1f}°, {vel:.1f}°/min); {otro} no lo confirma: verificar en el sitio")

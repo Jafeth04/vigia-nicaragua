@@ -140,7 +140,23 @@ function pintarNodos() {
   }
 }
 
-window.restablecerNodo = (id) => VIGIA.postJSON(`/api/nodos/${encodeURIComponent(id)}/restablecer`).catch(mostrarError);
+// Acciones del panel protegidas con PIN (si el servidor lo tiene definido).
+// El PIN se pide una vez y queda guardado en este navegador.
+const CLAVE_PIN = 'vigia-pin-panel';
+async function accion(url, datos = {}) {
+  const cabeceras = () => ({ 'X-VIGIA-PIN': VIGIA.leer(CLAVE_PIN, '') });
+  try {
+    return await VIGIA.postJSON(url, datos, cabeceras());
+  } catch (e) {
+    if (e.status !== 401) throw e;
+    const pin = prompt('PIN del panel (lo define quien administra VIGÍA):');
+    if (!pin) throw new Error('Acción cancelada: falta el PIN del panel');
+    VIGIA.guardar(CLAVE_PIN, pin.trim());
+    return VIGIA.postJSON(url, datos, cabeceras());
+  }
+}
+
+window.restablecerNodo = (id) => accion(`/api/nodos/${encodeURIComponent(id)}/restablecer`).catch(mostrarError);
 
 // ---------- Reportes ----------
 function popupReporte(r) {
@@ -181,6 +197,15 @@ function pintarReportes() {
 
 // ---------- Comunidades de ladera (A, B y R) ----------
 function filaSensor(rol, s) {
+  const pila = s && typeof s.bateria === 'number' && s.bateria < 20 ? ` · 🔋${s.bateria}%` : '';
+  if (s && pila && s.conectado) {
+    const base = filaSensorBase(rol, s);
+    return base.replace('</small></div>', `${pila}</small></div>`).replace('class="sensor-rol ok"', 'class="sensor-rol warn"');
+  }
+  return filaSensorBase(rol, s);
+}
+
+function filaSensorBase(rol, s) {
   if (!s) return `<div class="sensor-rol off"><span class="rol">${rol}</span><span>No instalado</span><small></small></div>`;
   if (!s.conectado) return `<div class="sensor-rol off"><span class="rol">${rol}</span><span>Sin respuesta</span><small>${VIGIA.esc(s.nombre)}</small></div>`;
   if (rol === 'R') {
@@ -417,7 +442,7 @@ function reiniciar() {
   confirmarReinicio = null;
   boton.textContent = 'Reiniciar todo';
   quitarSismo();
-  VIGIA.postJSON('/api/reiniciar').catch(mostrarError);
+  accion('/api/reiniciar').catch(mostrarError);
   alternarSimulacion(false);
 }
 
@@ -428,7 +453,7 @@ async function iniciar() {
     const asignar = e.target.closest('.asignar');
     const ir = e.target.closest('[data-ir]');
     if (asignar) {
-      VIGIA.postJSON('/api/asignar', { zona: asignar.dataset.zona, tipo: asignar.dataset.tipo }).catch(mostrarError);
+      accion('/api/asignar', { zona: asignar.dataset.zona, tipo: asignar.dataset.tipo }).catch(mostrarError);
     } else if (ir) {
       const z = estado.zonas.find((x) => x.zona === ir.dataset.ir);
       if (z) mapa.flyTo([z.lat, z.lng], 12);
@@ -441,17 +466,17 @@ async function iniciar() {
   });
   $('recursos').addEventListener('click', (e) => {
     const liberar = e.target.closest('.liberar');
-    if (liberar) VIGIA.postJSON('/api/liberar', { recurso_id: liberar.dataset.recurso }).catch(mostrarError);
+    if (liberar) accion('/api/liberar', { recurso_id: liberar.dataset.recurso }).catch(mostrarError);
   });
   document.querySelectorAll('[data-escenario]').forEach((boton) => {
     boton.addEventListener('click', () => {
-      VIGIA.postJSON(`/api/simular/${boton.dataset.escenario}`).catch(mostrarError);
+      accion(`/api/simular/${boton.dataset.escenario}`).catch(mostrarError);
       alternarSimulacion(false);
     });
   });
   $('btn-simulacion').addEventListener('click', () => alternarSimulacion());
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') alternarSimulacion(false); });
-  $('modo-demo').addEventListener('change', () => VIGIA.postJSON('/api/config', { modo_demo: $('modo-demo').checked }).catch(mostrarError));
+  $('modo-demo').addEventListener('change', () => accion('/api/config', { modo_demo: $('modo-demo').checked }).catch(mostrarError));
   $('btn-reiniciar').addEventListener('click', reiniciar);
 
   setInterval(() => { $('reloj').textContent = VIGIA.hora(VIGIA.ahora()); }, 1000);

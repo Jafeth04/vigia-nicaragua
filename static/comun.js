@@ -67,10 +67,10 @@ const VIGIA = (() => {
     return catalogoCache;
   }
 
-  async function postJSON(url, datos = {}) {
+  async function postJSON(url, datos = {}, cabeceras = {}) {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...cabeceras },
       body: JSON.stringify(datos),
     });
     if (!resp.ok) {

@@ -14,11 +14,13 @@ Ejecutar (desde la carpeta vigia):
 import asyncio
 import base64
 import json
+import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -31,6 +33,16 @@ from simulador import Simulador
 from sismo import VP, VS, Sismos
 
 ESTATICOS = Path(__file__).parent / "static"
+
+# PIN para las acciones del panel (asignar, simular, reiniciar...). Se define con la
+# variable de entorno VIGIA_PIN; si no está definida, el panel queda abierto (pruebas locales).
+PIN = os.environ.get("VIGIA_PIN", "")
+
+
+def exigir_pin(x_vigia_pin: str | None = Header(default=None)):
+    if PIN and not secrets.compare_digest(x_vigia_pin or "", PIN):
+        raise HTTPException(401, "Falta el PIN del panel o es incorrecto")
+
 
 E = Estado()
 S = Sismos()
@@ -211,6 +223,7 @@ async def actualizar_estado_nodo(nodo, msg):
         motivo=str(msg.get("motivo") or "")[:120],
         valores=msg.get("valores") if isinstance(msg.get("valores"), dict) else {},
         bateria=msg.get("bateria"),
+        cargando=msg.get("cargando"),
     )
     if nuevo == previo:
         return
@@ -403,7 +416,7 @@ async def api_mensaje_nodo(msg: dict):
     return {"ok": True}
 
 
-@app.post("/api/nodos/{nid}/restablecer")
+@app.post("/api/nodos/{nid}/restablecer", dependencies=[Depends(exigir_pin)])
 async def api_restablecer_nodo(nid: str):
     nodo = E.nodos.get(nid)
     if not nodo:
@@ -415,7 +428,7 @@ async def api_restablecer_nodo(nid: str):
     return {"ok": True}
 
 
-@app.post("/api/asignar")
+@app.post("/api/asignar", dependencies=[Depends(exigir_pin)])
 async def api_asignar(datos: dict):
     zona, tipo = datos.get("zona"), datos.get("tipo")
     if zona not in LUGARES_POR_ID or tipo not in RECURSOS:
@@ -433,7 +446,7 @@ async def api_asignar(datos: dict):
     return recurso
 
 
-@app.post("/api/liberar")
+@app.post("/api/liberar", dependencies=[Depends(exigir_pin)])
 async def api_liberar(datos: dict):
     recurso = next((r for r in E.recursos if r["id"] == datos.get("recurso_id")), None)
     if not recurso or not recurso["zona"]:
@@ -445,7 +458,7 @@ async def api_liberar(datos: dict):
     return recurso
 
 
-@app.post("/api/config")
+@app.post("/api/config", dependencies=[Depends(exigir_pin)])
 async def api_config(datos: dict):
     E.modo_demo = bool(datos.get("modo_demo"))
     E.registrar(f"Modo demo {'activado: 1 nodo basta para confirmar un sismo' if E.modo_demo else 'desactivado'}")
@@ -453,7 +466,7 @@ async def api_config(datos: dict):
     return {"modo_demo": E.modo_demo}
 
 
-@app.post("/api/reiniciar")
+@app.post("/api/reiniciar", dependencies=[Depends(exigir_pin)])
 async def api_reiniciar():
     SIM.detener()
     S.reiniciar()
@@ -480,7 +493,7 @@ ESCENARIOS = {
 }
 
 
-@app.post("/api/simular/{escenario}")
+@app.post("/api/simular/{escenario}", dependencies=[Depends(exigir_pin)])
 async def api_simular(escenario: str):
     if escenario not in ESCENARIOS:
         raise HTTPException(404, "Escenario desconocido")

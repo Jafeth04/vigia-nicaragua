@@ -64,6 +64,13 @@ En la laptop abre **http://localhost:8000/panel**.
 **En la nube:** el proyecto se despliega en Render con `render.yaml`
 (https://vigia-nicaragua.onrender.com).
 
+**PIN del panel:** las acciones del panel (asignar recursos, simular, reiniciar,
+restablecer nodos, modo demo) piden un PIN si el servidor tiene definida la
+variable de entorno `VIGIA_PIN`. En Render: *Environment → Add Environment
+Variable → `VIGIA_PIN`*. En una laptop: `$env:VIGIA_PIN = "1234"` antes de
+arrancar. Sin la variable, el panel queda abierto. Los reportes de los vecinos
+y los sensores nunca piden PIN.
+
 ## 3. El celular nodo (Termux) – pendiente de probar en un celular real
 
 El documento del proyecto propone que el celular nodo de la comunidad decida

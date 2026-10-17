@@ -10,3 +10,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      # PIN de las acciones del panel. Se escribe en el panel de Render (Environment), nunca en el repositorio.
+      - key: VIGIA_PIN
+        sync: false
