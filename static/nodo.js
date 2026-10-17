@@ -435,6 +435,50 @@ function pintar() {
   $('ind-hz').textContent = `${hz} lecturas/s`;
   $('ind-bateria').textContent = bateria ? `Batería ${Math.round(bateria.level * 100)}%${bateria.charging ? ' · cargando' : ''}` : '';
   $('ind-cola').textContent = conexion && conexion.pendientes ? `${conexion.pendientes} mensajes en cola` : '';
+  $('txt-rol').textContent = cfg.modo === 'ladera' ? cfg.rol : cfg.modo === 'referencia' ? 'R' : '';
+  pintarChequeo(conectado);
+  pintarNegro();
+}
+
+// Lista de chequeo para quien instala: todo en verde = el sensor quedó bien puesto.
+function pintarChequeo(conectado) {
+  const items = [];
+  const agregar = (ok, texto, detalle = '') => items.push({ ok, texto, detalle });
+  agregar(hz >= 20, hz >= 20 ? `El sensor mide (${hz} lecturas por segundo)` : 'No llegan lecturas del sensor',
+    hz >= 20 ? '' : 'Revisa que la página esté en https:// y que diste permiso de movimiento.');
+  agregar(!!conectado, conectado ? 'En línea con el servidor' : 'Sin conexión', conectado ? '' : 'Revisa el WiFi o los datos móviles.');
+  agregar(!!g0 && !calibrando, g0 ? 'Calibrado en su posición' : 'Falta calibrar', g0 ? '' : 'Toca «Recalibrar» con el celular ya instalado y quieto.');
+  if (enComunidad()) {
+    agregar(!!estadoComunidad, estadoComunidad ? `El nodo recibe este sensor (${nombreComunidad()})` : 'El nodo aún no confirma este sensor',
+      estadoComunidad ? '' : 'Espera unos segundos; si sigue igual, revisa que A, B y R eligieron la misma comunidad.');
+  }
+  if (cfg.modo !== 'rio' && g && g0) {
+    const inc = anguloGrados(g, g0);
+    agregar(inc < 0.3, inc < 0.3 ? `Firme (${inc.toFixed(2)}° desde la calibración)` : `Se movió ${inc.toFixed(1)}° desde la calibración`,
+      inc < 0.3 ? '' : 'Si no fue la tierra, revisa que esté bien sujeto y recalibra.');
+  }
+  if (bateria) {
+    const pct = Math.round(bateria.level * 100);
+    const okBat = pct >= 20 || bateria.charging;
+    agregar(okBat, `Batería ${pct} %${bateria.charging ? ' (cargando)' : ''}`, okBat ? '' : 'Conecta el cargador o revisa el panel solar.');
+  } else {
+    agregar(true, 'Batería: este celular no la informa a la página', 'Pasa en iPhone. Vigila la carga a mano.');
+  }
+  const pantalla = bloqueoPantalla && !bloqueoPantalla.released;
+  agregar(!!pantalla, pantalla ? 'La pantalla no se apagará sola' : 'La pantalla podría apagarse',
+    pantalla ? '' : 'Desactiva el bloqueo automático en los ajustes del celular.');
+  $('chequeo').innerHTML = items.map((i) =>
+    `<li class="${i.ok ? 'ok' : 'mal'}"><span>${i.texto}${i.detalle ? `<small>${i.detalle}</small>` : ''}</span></li>`).join('');
+  const bien = items.filter((i) => i.ok).length;
+  $('chequeo-resumen').textContent = `${bien}/${items.length} listo`;
+}
+
+function pintarNegro() {
+  if ($('negro').hidden) return;
+  const comunidad = enComunidad() && estadoComunidad;
+  const color = comunidad ? COLOR_COMUNIDAD[estadoComunidad.nivel] : alarma.nivel;
+  $('negro-punto').className = `negro-punto ${color}`;
+  $('negro-texto').textContent = comunidad ? `${NOMBRE_COMUNIDAD[estadoComunidad.nivel]}` : NOMBRE_NIVEL[alarma.nivel];
 }
 
 function anotar(texto) {
@@ -547,6 +591,8 @@ async function iniciarPagina() {
     mostrarCamposSegunModo(modoElegido());
   }));
   $('btn-angulo').addEventListener('click', registrarAngulo);
+  $('btn-negro').addEventListener('click', () => { $('negro').hidden = false; pintarNegro(); });
+  $('negro').addEventListener('click', () => { $('negro').hidden = true; pintar(); });
   $('btn-gps').addEventListener('click', () => {
     if (!navigator.geolocation) { $('txt-ubicacion').textContent = 'Este navegador no tiene GPS'; return; }
     $('txt-ubicacion').textContent = 'Buscando…';

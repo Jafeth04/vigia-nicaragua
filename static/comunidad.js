@@ -9,7 +9,8 @@ const CLAVE_COLA = 'vigia-cola';
 const CLAVE_HISTORIAL = 'vigia-mis-reportes';
 
 let catalogo = null;
-let cfg = { zona: 'jinotega', lat: null, lng: null, numeroSms: '', comite: false, ...VIGIA.leer(CLAVE_CFG, {}) };
+let cfg = { zona: 'jinotega', comunidad: 'prueba', lat: null, lng: null, numeroSms: '', comite: false, ...VIGIA.leer(CLAVE_CFG, {}) };
+let estadoComunidades = []; // lo que decidió el celular nodo para cada comunidad
 let tipoElegido = null;
 let fotoActual = null;
 let enviando = false;
@@ -308,29 +309,98 @@ function cerrarAlerta() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
-// Protocolo: Atención llega solo al comité local de esa zona; Alerta llega a todos.
+// Un aviso es «mío» si es de mi comunidad (o, si no trae comunidad, de mi zona).
+function esMio(msg) {
+  return msg.comunidad ? msg.comunidad === cfg.comunidad : msg.zona === cfg.zona;
+}
+
+// Protocolo: Atención llega solo al comité; Alerta, la baja de nivel y el fin llegan a quien recibió la alerta.
 function alertaZona(msg) {
-  const mia = msg.zona === cfg.zona;
+  const mia = esMio(msg);
   if (msg.publico === 'comite' && !(cfg.comite && mia)) return;
-  const alerta = msg.nivel === 'alerta';
+  const texto = msg.mensaje.replace(/^VIGIA /, '');
+  const [clase, titulo] = msg.nivel === 'alerta' ? ['rojo', 'ALERTA']
+    : msg.nivel === 'normal' ? ['ok', 'FIN DEL AVISO']
+      : msg.publico === 'todos' ? ['', 'BAJA A ATENCIÓN'] : ['', 'ATENCIÓN · COMITÉ'];
   const div = document.createElement('div');
-  div.className = `alerta-zona ${alerta ? 'rojo' : ''} ${mia ? 'mia' : ''}`;
-  const titulo = alerta ? 'ALERTA' : 'ATENCIÓN · COMITÉ';
-  div.innerHTML = `<b>${titulo} · ${mia ? 'TU ZONA · ' : ''}${VIGIA.esc(msg.zona_nombre)}</b>
-    <span>${VIGIA.esc(msg.mensaje.replace(/^VIGIA /, ''))}</span><small>${VIGIA.hora(msg.t)}</small>`;
+  div.className = `alerta-zona ${clase} ${mia ? 'mia' : ''}`;
+  div.innerHTML = `<b>${titulo} · ${mia ? 'TU COMUNIDAD · ' : ''}${VIGIA.esc(msg.zona_nombre)}</b>
+    <span>${VIGIA.esc(texto)}</span><small>${VIGIA.hora(msg.t)}</small>`;
   div.addEventListener('click', () => div.remove());
   $('alertas-zona').prepend(div);
   while ($('alertas-zona').children.length > 3) $('alertas-zona').lastChild.remove();
   if (!mia) return;
-  const texto = msg.mensaje.replace(/^VIGIA /, '');
-  if (alerta) {
+  if (msg.nivel === 'alerta') {
     sonarSirena(8);
     hablar(`Alerta en tu comunidad. ${texto}`);
     if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 600]);
+  } else if (msg.nivel === 'normal') {
+    hablar(texto);
+    if (navigator.vibrate) navigator.vibrate([200]);
+  } else if (msg.publico === 'todos') {
+    hablar(texto);
+    if (navigator.vibrate) navigator.vibrate([300, 200, 300]);
   } else {
     sonarSirena(2);
     hablar(`Aviso para el comité. ${texto}`);
     if (navigator.vibrate) navigator.vibrate([300, 200, 300]);
+  }
+}
+
+// ---------- Mi comunidad ----------
+function pintarMiComunidad() {
+  const caja = $('mi-comunidad');
+  const conf = catalogo.comunidades.find((c) => c.id === cfg.comunidad);
+  if (!conf) { caja.hidden = true; return; }
+  caja.hidden = false;
+  $('mc-nombre').textContent = conf.nombre;
+  const c = estadoComunidades.find((x) => x.id === cfg.comunidad);
+  const etq = $('mc-etq');
+  let clase;
+  let titulo;
+  let texto;
+  if (!c) {
+    [clase, titulo, texto] = ['off', 'Sin sensores conectados', 'Todavía no hay sensores A, B o R en línea para esta comunidad.'];
+  } else if (c.nivel === 'alerta') {
+    [clase, titulo, texto] = ['crit', 'ALERTA: evacúa',
+      `Sal por la ruta acordada hacia el punto de encuentro y sigue las indicaciones del comité. ${c.motivo}`];
+  } else if (c.nivel === 'atencion' && cfg.comite) {
+    [clase, titulo, texto] = ['warn', 'Atención: ir a revisar', c.motivo];
+  } else if (c.nivel === 'atencion') {
+    // Protocolo del reporte: la Atención es para el comité; a los habitantes no se les alarma todavía.
+    [clase, titulo, texto] = ['ok', 'Sin alerta', 'El comité local está revisando la ladera. Si hay peligro, sonará la alarma.'];
+  } else {
+    [clase, titulo, texto] = ['ok', 'Todo normal', c.motivo || 'Los sensores no registran movimiento en la ladera.'];
+  }
+  caja.className = `mi-comunidad ${clase}`;
+  etq.className = `etq ${clase === 'off' ? 'off' : clase === 'crit' ? 'crit' : clase === 'warn' ? 'warn' : 'ok'}`;
+  etq.textContent = !c ? 'Sin datos' : cfg.comite || c.nivel !== 'atencion' ? { normal: 'Normal', atencion: 'Atención', alerta: 'Alerta' }[c.nivel] : 'Normal';
+  $('mc-titulo').textContent = titulo;
+  $('mc-texto').textContent = texto;
+  const comiteVe = cfg.comite && c && (c.nivel === 'atencion' || c.decision === 'confirmada');
+  $('mc-comite').hidden = !comiteVe;
+  if (comiteVe) {
+    const confirmada = c.decision === 'confirmada';
+    $('mc-falsa').hidden = confirmada;
+    $('mc-confirmar').hidden = confirmada;
+    $('mc-terminar').hidden = !confirmada;
+  }
+}
+
+async function decisionComite(decision) {
+  const url = `/api/comunidades/${encodeURIComponent(cfg.comunidad)}/decision`;
+  const cabeceras = () => ({ 'X-VIGIA-PIN': VIGIA.leer('vigia-pin-panel', '') });
+  try {
+    await VIGIA.postJSON(url, { decision }, cabeceras());
+  } catch (e) {
+    if (e.status === 401) {
+      const pin = prompt('PIN del comité:');
+      if (!pin) return;
+      VIGIA.guardar('vigia-pin-panel', pin.trim());
+      try { await VIGIA.postJSON(url, { decision }, cabeceras()); } catch (e2) { alert(e2.message); }
+    } else {
+      alert(e.message);
+    }
   }
 }
 
@@ -342,7 +412,8 @@ function pintarConexion(ok) {
 
 function pintarZona() {
   const lugar = catalogo.lugares.find((l) => l.id === cfg.zona);
-  $('resumen-zona').textContent = `${lugar ? lugar.nombre : ''}${cfg.lat !== null ? ' · GPS' : ''}${cfg.comite ? ' · comité' : ''}`;
+  const comunidad = catalogo.comunidades.find((c) => c.id === cfg.comunidad);
+  $('resumen-zona').textContent = `${comunidad ? comunidad.nombre : lugar ? lugar.nombre : ''}${cfg.lat !== null ? ' · GPS' : ''}${cfg.comite ? ' · comité' : ''}`;
 }
 
 async function iniciar() {
@@ -351,7 +422,21 @@ async function iniciar() {
   $('zona').value = cfg.zona;
   $('numero-sms').value = cfg.numeroSms;
   $('es-comite').checked = !!cfg.comite;
-  $('es-comite').addEventListener('change', () => { cfg.comite = $('es-comite').checked; guardarCfg(); pintarZona(); });
+  $('es-comite').addEventListener('change', () => { cfg.comite = $('es-comite').checked; guardarCfg(); pintarZona(); pintarMiComunidad(); });
+  $('mi-comunidad-sel').innerHTML = '<option value="">Ninguna</option>'
+    + catalogo.comunidades.map((c) => `<option value="${c.id}">${VIGIA.esc(c.nombre)}</option>`).join('');
+  $('mi-comunidad-sel').value = cfg.comunidad || '';
+  $('mi-comunidad-sel').addEventListener('change', () => {
+    cfg.comunidad = $('mi-comunidad-sel').value;
+    const c = catalogo.comunidades.find((x) => x.id === cfg.comunidad);
+    if (c) { cfg.zona = c.zona; $('zona').value = c.zona; cfg.lat = cfg.lng = null; $('txt-gps').textContent = ''; }
+    guardarCfg();
+    pintarZona();
+    pintarMiComunidad();
+  });
+  $('mc-falsa').addEventListener('click', () => decisionComite('falsa'));
+  $('mc-confirmar').addEventListener('click', () => decisionComite('confirmar'));
+  $('mc-terminar').addEventListener('click', () => decisionComite('terminar'));
   if (cfg.lat !== null) $('txt-gps').textContent = `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}`;
 
   const graves = new Set(['atrapados', 'heridos', 'deslizamiento']);
@@ -409,6 +494,7 @@ async function iniciar() {
     alMensaje: (msg) => {
       if (msg.tipo === 'alerta_sismo') alertaSismo(msg);
       if (msg.tipo === 'alerta_zona') alertaZona(msg);
+      if (msg.tipo === 'estado_comunidades') { estadoComunidades = msg.lista; pintarMiComunidad(); }
     },
     alCambiarConexion: (ok) => { pintarConexion(ok); if (ok) vaciarCola(); },
   });
@@ -416,6 +502,7 @@ async function iniciar() {
   window.addEventListener('online', vaciarCola);
   setInterval(vaciarCola, 5000);
   pintarHistorial();
+  pintarMiComunidad();
 }
 
 iniciar();

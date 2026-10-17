@@ -106,7 +106,8 @@
 
     <section id="vista-monitor" class="monitor" style="display:grid;gap:14px" hidden>
       <div class="monitor-cab">
-        <div><b id="txt-nombre"></b><span id="txt-modo"></span></div>
+        <span id="txt-rol" class="rol-grande" aria-hidden="true"></span>
+        <div class="monitor-tit"><b id="txt-nombre"></b><span id="txt-modo"></span></div>
       </div>
 
       <div id="semaforo" class="estado-nodo verde" role="status" aria-live="polite">
@@ -125,6 +126,11 @@
       <div class="indicadores">
         <span id="ind-hz"></span><span id="ind-bateria"></span><span id="ind-cola"></span>
       </div>
+
+      <details id="caja-chequeo" class="tarjeta chequeo-caja" open>
+        <summary class="titulo-seccion">Chequeo de instalación <span id="chequeo-resumen" class="chequeo-resumen"></span></summary>
+        <ul id="chequeo" class="chequeo"></ul>
+      </details>
 
       <details id="prueba-angulo" class="tarjeta prueba-angulo">
         <summary class="titulo-seccion">Prueba de ángulos conocidos</summary>
@@ -146,12 +152,20 @@
       </div>
 
       <div class="acciones-nodo">
+        <button id="btn-negro" class="btn btn-primario">🌑 Pantalla negra</button>
         <button id="btn-restablecer" class="btn">Restablecer</button>
         <button id="btn-recalibrar" class="btn">Recalibrar</button>
         <button id="btn-config" class="btn">Configurar</button>
       </div>
     </section>
   </main>
+
+  <!-- Pantalla negra: ahorra batería (en pantallas OLED el negro casi no consume) y sigue midiendo -->
+  <div id="negro" class="negro" hidden>
+    <span id="negro-punto" class="negro-punto"></span>
+    <span id="negro-texto" class="negro-texto"></span>
+    <small>Sigue midiendo · toca para volver</small>
+  </div>
 
   <script src="/static/comun.js"></script>
   <script src="/static/nodo.js"></script>

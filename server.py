@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 import notificador
 import prioridad
-from comunidades import NOMBRE_NIVEL, Comunidades
+from comunidades import NIVELES, NOMBRE_NIVEL, Comunidades
 from estado import (LUGARES_POR_ID, RECURSOS, ROLES, TIPOS_LUGAR, TIPOS_REPORTE, Estado, ahora_ms, catalogo,
                     estado_efectivo, interpretar_sms, lugar_mas_cercano)
 from simulador import Simulador
@@ -74,7 +74,7 @@ def foto_estado():
         "nodos": nodos,
         "reportes": reportes,
         "zonas": prioridad.calcular(E, ahora, C),
-        "comunidades": C.foto(),
+        "comunidades": C.foto(ahora),
         "recursos": E.recursos,
         "bitacora": E.bitacora[-40:][::-1],
         "sismo": S.evento if S.activo(ahora) else None,
@@ -130,35 +130,66 @@ def protocolo_aviso(nivel):
     return "comite" if nivel == "atencion" else "todos"
 
 
+def contactos(zona=None, comunidad_id=None, publico="comite"):
+    """Teléfonos que reciben el SMS: de una comunidad, de las comunidades de una zona o de todas."""
+    if comunidad_id:
+        lista = [C.config[comunidad_id]]
+    else:
+        lista = [c for c in C.config.values() if zona is None or c["zona"] == zona]
+    numeros = []
+    for c in lista:
+        numeros += c.get("contactos_comite", [])
+        if publico == "todos":
+            numeros += c.get("contactos_alerta", [])
+    return list(dict.fromkeys(numeros))  # sin repetidos
+
+
+async def avisar(*, zona, nivel, publico, texto, numeros, comunidad_id=None, ambas_sim=False):
+    """Un aviso completo: a la app Comunidad (según el público) y por SMS. Devuelve el resultado del SMS."""
+    await enviar_a(comunidad, {
+        "tipo": "alerta_zona", "zona": zona, "zona_nombre": LUGARES_POR_ID[zona]["nombre"], "comunidad": comunidad_id,
+        "nivel": nivel, "publico": publico, "mensaje": texto, "t": ahora_ms(),
+    })
+    return await notificador.enviar(numeros, texto, ambas_sim=ambas_sim)
+
+
 async def revisar_comunidades():
-    """El celular nodo decide el estado de cada comunidad y avisa según el protocolo."""
+    """El celular nodo decide el estado de cada comunidad y avisa según el protocolo,
+    tanto cuando el peligro sube como cuando baja o termina."""
     ahora = ahora_ms()
-    for cid, antes, nivel, motivos in C.evaluar(E.nodos, ahora):
+    cambios = C.evaluar(E.nodos, ahora)
+    for cid, antes, nivel, motivos in cambios:
         config = C.config[cid]
-        zona = LUGARES_POR_ID[config["zona"]]["nombre"]
+        nombre = config["nombre"]
         motivo = motivos[0] if motivos else ""
         marcar_cambio()
         await avisar_sensores_de(cid)
-        if nivel == "normal":
-            E.registrar(f"🟢 {config['nombre']}: vuelve a Normal")
-            continue
-        if nivel == "alerta":
-            texto = (f"VIGIA ALERTA de deslizamiento en {config['nombre']}. {motivo}. "
-                     f"Sigue el plan de evacuación de tu comunidad.")
-            numeros = config.get("contactos_comite", []) + config.get("contactos_alerta", [])
-        else:
-            texto = f"VIGIA ATENCION en {config['nombre']}: {motivo}. Comité: verificar en el sitio."
-            numeros = config.get("contactos_comite", [])
-        E.registrar(f"{'🔴' if nivel == 'alerta' else '🟡'} {config['nombre']}: {NOMBRE_NIVEL[nivel].upper()}. {motivo}",
-                    "rojo" if nivel == "alerta" else "amarillo")
-        await enviar_a(comunidad, {
-            "tipo": "alerta_zona", "zona": config["zona"], "zona_nombre": zona, "comunidad": cid,
-            "nivel": nivel, "publico": protocolo_aviso(nivel), "mensaje": texto, "t": ahora,
-        })
-        resultado = await notificador.enviar(numeros, texto, ambas_sim=nivel == "alerta")
-        destino = "comité y habitantes" if nivel == "alerta" else "comité local"
+        sube = NIVELES.index(nivel) > NIVELES.index(antes)
+        if sube and nivel == "alerta":
+            texto = f"VIGIA ALERTA de deslizamiento en {nombre}. {motivo}. Sigue el plan de evacuación de tu comunidad."
+            publico, destino = "todos", "comité y habitantes"
+        elif sube:
+            texto = f"VIGIA ATENCION en {nombre}: {motivo}. Comité: verificar en el sitio."
+            publico, destino = "comite", "comité local"
+        elif nivel == "atencion":  # bajó de Alerta a Atención: se avisa a todos los que recibieron la Alerta
+            texto = f"VIGIA La alerta en {nombre} baja a ATENCION: {motivo}. No regreses hasta que el comité lo indique."
+            publico, destino = "todos", "comité y habitantes"
+        else:  # vuelve a Normal: avisa a quienes recibieron el último aviso
+            regreso = " Regresa solo cuando el comité lo indique." if antes == "alerta" else ""
+            texto = f"VIGIA FIN de la {'alerta' if antes == 'alerta' else 'atencion'} en {nombre}: vuelve a Normal.{regreso}"
+            publico = protocolo_aviso(antes)
+            destino = "comité y habitantes" if publico == "todos" else "comité local"
+        icono = {"alerta": "🔴", "atencion": "🟡", "normal": "🟢"}[nivel]
+        E.registrar(f"{icono} {nombre}: {NOMBRE_NIVEL[nivel].upper()}. {motivo or 'Sin movimiento en la ladera'}",
+                    {"alerta": "rojo", "atencion": "amarillo", "normal": "info"}[nivel])
+        resultado = await avisar(zona=config["zona"], nivel=nivel, publico=publico, texto=texto, comunidad_id=cid,
+                                 numeros=contactos(comunidad_id=cid, publico=publico),
+                                 ambas_sim=nivel == "alerta" or antes == "alerta")
         C.estado[cid]["avisos"].append({"t": ahora, "nivel": nivel, "destino": destino, "sms": resultado})
-        E.registrar(f"📨 Aviso al {destino} de {config['nombre']}: app enviada; SMS {resultado}")
+        del C.estado[cid]["avisos"][:-10]
+        E.registrar(f"📨 Aviso al {destino} de {nombre}: app enviada; SMS {resultado}")
+    if cambios:
+        await enviar_a(comunidad, {"tipo": "estado_comunidades", "lista": C.resumen()})
 
 
 async def avisar_sensores_de(cid):
@@ -230,25 +261,42 @@ async def actualizar_estado_nodo(nodo, msg):
     if nuevo == "verde":
         nodo["atendido_por"] = None
         E.registrar(f"🟢 {nodo['nombre']} volvió a la normalidad")
-        return
-    if nuevo == "rojo":
-        nodo["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza, vuelve al ranking
-    E.registrar(f"{'🔴' if nuevo == 'rojo' else '🟡'} {nodo['nombre']}: {nodo['motivo']}", nuevo)
+    else:
+        if nuevo == "rojo":
+            nodo["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza, vuelve al ranking
+        E.registrar(f"{'🔴' if nuevo == 'rojo' else '🟡'} {nodo['nombre']}: {nodo['motivo']}", nuevo)
     if nodo.get("comunidad"):
         return  # en una comunidad decide el celular nodo con A, B y R, no un sensor solo
-    if nodo["modo"] in ("ladera", "rio"):
-        zona = LUGARES_POR_ID[nodo["zona"]]["nombre"]
-        nivel = "alerta" if nuevo == "rojo" else "atencion"
-        if nodo["modo"] == "ladera":
-            consejo = "Aléjate de laderas y cauces." if nivel == "alerta" else "Comité: verificar en el sitio."
-            texto = f"Peligro de deslizamiento: {nodo['nombre']}. {nodo['motivo']}. {consejo}"
+    await avisar_nodo_suelto(nodo, previo, nuevo)
+
+
+async def avisar_nodo_suelto(nodo, previo, nuevo):
+    """Ampliación: nodos de río, de ladera sin comunidad y de edificios avisan con el mismo protocolo."""
+    nivel = {"verde": "normal", "amarillo": "atencion", "rojo": "alerta"}[nuevo]
+    antes = {"verde": "normal", "amarillo": "atencion", "rojo": "alerta"}[previo]
+    nombre, motivo = nodo["nombre"], nodo["motivo"]
+    if nodo["modo"] == "estructura":
+        if nivel != "alerta":
+            return  # en edificios solo se avisa la alerta; lo demás queda en el panel
+        texto = f"VIGIA {nombre}: {motivo}. No entrar al edificio hasta que se revise."
+        publico = "comite"
+    elif nodo["modo"] in ("ladera", "rio"):
+        que = "Peligro de deslizamiento" if nodo["modo"] == "ladera" else "Crecida del río"
+        if nivel == "normal":
+            texto = f"VIGIA FIN: {nombre} vuelve a la normalidad."
+            publico = protocolo_aviso(antes)
+        elif nivel == "alerta":
+            consejo = "Aléjate de laderas y cauces." if nodo["modo"] == "ladera" else "Prepárate para evacuar."
+            texto = f"VIGIA ALERTA. {que}: {nombre}. {motivo}. {consejo}"
+            publico = "todos"
         else:
-            consejo = "Prepárate para evacuar." if nivel == "alerta" else "Comité: vigilar el nivel."
-            texto = f"Crecida del río: {nodo['nombre']}. {nodo['motivo']}. {consejo}"
-        await enviar_a(comunidad, {
-            "tipo": "alerta_zona", "zona": nodo["zona"], "zona_nombre": zona,
-            "nivel": nivel, "publico": protocolo_aviso(nivel), "mensaje": texto, "t": ahora_ms(),
-        })
+            texto = f"VIGIA ATENCION. {que}: {nombre}. {motivo}. Comité: vigilar."
+            publico = "comite"
+    else:
+        return
+    resultado = await avisar(zona=nodo["zona"], nivel=nivel, publico=publico, texto=texto,
+                             numeros=contactos(zona=nodo["zona"], publico=publico), ambas_sim=nivel == "alerta")
+    E.registrar(f"📨 Aviso de {nombre} ({'todos' if publico == 'todos' else 'comité'}): SMS {resultado}")
 
 
 def registrar_calibracion(nodo, msg):
@@ -275,10 +323,16 @@ async def registrar_onda_p(nodo, msg):
     if not resultado:
         return
     clase, evento = resultado
+    await enviar_a(comunidad, alerta_sismo(evento))
     if clase == "nuevo":
         E.ultimo_sismo_t = evento["t0"]
         E.registrar(f"🌐 SISMO CONFIRMADO por {evento['n_nodos']} nodo(s). Alerta enviada a la comunidad.", "rojo")
-    await enviar_a(comunidad, alerta_sismo(evento))
+        # El SMS llega en segundos, a menudo después de la sacudida: sirve para que todos los comités sepan y revisen.
+        cerca = lugar_mas_cercano(evento["lat"], evento["lng"])["nombre"]
+        resultado = await notificador.enviar(
+            contactos(publico="comite"), f"VIGIA SISMO detectado cerca de {cerca}. Protégete y luego revisa tu comunidad.",
+            ambas_sim=True)
+        E.registrar(f"📨 Aviso de sismo a los comités: SMS {resultado}")
 
 
 async def registrar_onda_s(nodo, msg):
@@ -475,8 +529,22 @@ async def api_reiniciar():
     E.registrar("Sistema reiniciado")
     for nid in list(nodos_conectados):
         await enviar_a_nodo(nid, {"tipo": "reiniciado"})  # los nodos reales vuelven a presentarse
+    await enviar_a(comunidad, {"tipo": "estado_comunidades", "lista": C.resumen()})
     marcar_cambio()
     return {"ok": True}
+
+
+@app.post("/api/comunidades/{cid}/decision", dependencies=[Depends(exigir_pin)])
+async def api_decision_comunidad(cid: str, datos: dict):
+    """El comité, después de ir al sitio, descarta una Atención, la confirma o termina una alerta confirmada."""
+    try:
+        texto = C.decidir(cid, datos.get("decision"), ahora_ms())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    E.registrar(f"🧑‍🤝‍🧑 {C.config[cid]['nombre']}: {texto}", "amarillo")
+    await revisar_comunidades()
+    marcar_cambio()
+    return {"ok": True, "nivel": C.estado[cid]["nivel"]}
 
 
 ESCENARIOS = {
@@ -515,8 +583,10 @@ async def websocket(ws: WebSocket, rol: str = "panel", id: str = ""):
     try:
         if ws in paneles:
             await ws.send_json(foto_estado())
-        if rol == "comunidad" and S.activo(ahora_ms()):
-            await ws.send_json(alerta_sismo(S.evento))
+        if rol == "comunidad":
+            await ws.send_json({"tipo": "estado_comunidades", "lista": C.resumen()})
+            if S.activo(ahora_ms()):
+                await ws.send_json(alerta_sismo(S.evento))
         while True:
             try:
                 msg = json.loads(await ws.receive_text())

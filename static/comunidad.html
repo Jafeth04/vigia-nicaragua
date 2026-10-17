@@ -30,6 +30,17 @@
       </div>
     </section>
 
+    <section id="mi-comunidad" class="mi-comunidad" aria-live="polite" hidden>
+      <div class="mc-cab"><span id="mc-nombre" class="mc-nombre"></span><span id="mc-etq" class="etq"></span></div>
+      <b id="mc-titulo" class="mc-titulo"></b>
+      <p id="mc-texto" class="mc-texto"></p>
+      <div id="mc-comite" class="mc-comite" hidden>
+        <button id="mc-falsa" class="btn btn-ok">Fui al sitio: es falsa alarma</button>
+        <button id="mc-confirmar" class="btn btn-peligro">Fui al sitio: hay daños</button>
+        <button id="mc-terminar" class="btn" hidden>Terminar la alerta confirmada</button>
+      </div>
+    </section>
+
     <div id="alertas-zona" class="alertas-zona"></div>
 
     <section id="paso-tipo" style="display:grid;gap:14px">
@@ -88,6 +99,7 @@
     <details class="ajustes">
       <summary>Mi ubicación y ajustes <span id="resumen-zona"></span></summary>
       <div class="contenido">
+        <label class="campo">Mi comunidad <select id="mi-comunidad-sel"></select></label>
         <label class="campo">Mi zona <select id="zona"></select></label>
         <label class="check"><input id="es-comite" type="checkbox"> Soy del comité local: recibo también los avisos de Atención</label>
         <p class="ayuda">Atención: un solo sensor se movió y el comité verifica en el sitio. Alerta: dos sensores coinciden y se avisa a todos los habitantes.</p>

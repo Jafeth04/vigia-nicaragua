@@ -14,7 +14,13 @@ servidor, decide el estado de la comunidad:
 La referencia R compensa: a la inclinación de A y B se le resta la de R (si todo
 el sitio se mueve igual, no es la ladera). Si R también vibra, es un sismo y no
 un deslizamiento, así que esa vibración no cuenta.
+
+El comité tiene la última palabra en una Atención: puede descartarla (falsa
+alarma, por ejemplo una estaca golpeada) o confirmarla (vio grietas en el
+sitio), y entonces la comunidad pasa a Alerta aunque B no se haya movido.
 """
+from collections import deque
+
 from estado import COMUNIDADES, LUGARES_POR_ID, estado_efectivo
 
 INC_MOVIMIENTO = 0.5  # grados de inclinación, ya compensados con R
@@ -26,6 +32,7 @@ SOSTENER_S = 10  # prototipo: segundos. En campo serían minutos, ajustados con 
 
 NIVELES = ("normal", "atencion", "alerta")
 NOMBRE_NIVEL = {"normal": "Normal", "atencion": "Atención", "alerta": "Alerta"}
+HISTORIAL_S = 300  # la gráfica de tendencia muestra los últimos 5 minutos
 
 
 class Comunidades:
@@ -35,10 +42,73 @@ class Comunidades:
     def reiniciar(self):
         self.config = {c["id"]: c for c in COMUNIDADES}
         self.estado = {
-            cid: {"nivel": "normal", "motivos": [], "desde": None, "atendido_por": None, "sensores": {}, "avisos": []}
+            cid: {"nivel": "normal", "motivos": [], "desde": None, "atendido_por": None, "sensores": {}, "avisos": [],
+                  "decision": None, "decision_t": None, "bajar_a": None, "bajar_desde": None, "inmediato": False}
             for cid in self.config
         }
         self._desde = {}  # (nodo, condición) -> desde cuándo se cumple
+        self._historial = {}  # nodo -> deque[(t, inclinación)] para la gráfica de tendencia
+
+    def decidir(self, cid, decision, ahora):
+        """Decisión del comité tras ir al sitio. Devuelve un texto para la bitácora."""
+        st = self.estado.get(cid)
+        if st is None:
+            raise ValueError("Comunidad desconocida")
+        if decision == "falsa":
+            if st["nivel"] != "atencion":
+                raise ValueError("Solo se puede descartar una Atención")
+            st["decision"] = "descartada"
+            texto = "el comité revisó y es una falsa alarma"
+        elif decision == "confirmar":
+            if st["nivel"] != "atencion":
+                raise ValueError("Solo se puede confirmar una Atención")
+            st["decision"] = "confirmada"
+            texto = "el comité confirmó daños en el sitio: pasa a Alerta"
+        elif decision == "terminar":
+            if st["decision"] != "confirmada":
+                raise ValueError("No hay una alerta confirmada por el comité")
+            st["decision"] = None
+            texto = "el comité dio por terminada la alerta que había confirmado"
+        else:
+            raise ValueError("Decisión desconocida")
+        st["decision_t"] = ahora
+        st["inmediato"] = True  # lo que decide el comité se aplica sin esperar
+        return texto
+
+    def _anotar_historial(self, nid, ahora, inclinacion):
+        h = self._historial.setdefault(nid, deque())
+        if not h or ahora - h[-1][0] >= 2000:
+            h.append((ahora, round(inclinacion, 2)))
+        while h and ahora - h[0][0] > HISTORIAL_S * 1000:
+            h.popleft()
+
+    def _esperar_para_bajar(self, st, nivel, motivos, ahora):
+        """Subir de nivel es inmediato. Bajar exige que la mejora dure SOSTENER_S seguidos,
+        para no cancelar una alerta mientras se reinstalan los sensores uno por uno."""
+        if st.pop("inmediato", False) or NIVELES.index(nivel) >= NIVELES.index(st["nivel"]):
+            st["bajar_a"] = st["bajar_desde"] = None
+            st["inmediato"] = False
+            return nivel
+        if st["bajar_a"] != nivel:
+            st["bajar_a"], st["bajar_desde"] = nivel, ahora
+        if ahora - st["bajar_desde"] >= SOSTENER_S * 1000:
+            st["bajar_a"] = st["bajar_desde"] = None
+            return nivel
+        restante = SOSTENER_S - (ahora - st["bajar_desde"]) // 1000
+        motivos.insert(0, f"Mejora en observación: baja a {NOMBRE_NIVEL[nivel]} si se mantiene {restante} s más")
+        return st["nivel"]
+
+    def _aplicar_decision(self, st, nivel, motivos):
+        """El comité manda sobre una Atención, pero nunca apaga una Alerta de los sensores."""
+        if st["decision"] == "confirmada":
+            motivos.insert(0, "El comité confirmó daños en el sitio")
+            return "alerta"
+        if st["decision"] == "descartada":
+            if nivel == "atencion":
+                motivos.insert(0, "Atención descartada por el comité: falsa alarma. Recalibrar el sensor movido")
+                return "normal"
+            st["decision"] = None  # la situación cambió: vuelve a decidir el nodo
+        return nivel
 
     def _sostenido(self, clave, cumple, ahora):
         if not cumple:
@@ -58,8 +128,11 @@ class Comunidades:
         for cid in self.config:
             nivel, motivos, sensores = self._decidir(por_comunidad.get(cid, {}), ahora)
             st = self.estado[cid]
+            if sensores:
+                nivel = self._aplicar_decision(st, nivel, motivos)
             st["sensores"] = sensores
             st["motivos"] = motivos
+            nivel = self._esperar_para_bajar(st, nivel, motivos, ahora)
             if nivel != st["nivel"]:
                 if NIVELES.index(nivel) > NIVELES.index(st["nivel"]):
                     st["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza
@@ -101,6 +174,8 @@ class Comunidades:
         else:
             motivos.append("Sin referencia R instalada: no se puede compensar ni descartar sismos")
         r_vibra = r_viva and vib_r >= VIB_MOVIMIENTO
+        if r_viva:
+            self._anotar_historial(r["id"], ahora, inc_r)
         if r is not None:
             detalle["R"] = {"id": r["id"], "nombre": r["nombre"], "conectado": r_viva,
                             "inclinacion": round(inc_r, 2), "vibracion": round(vib_r, 2), "vibra": r_vibra,
@@ -120,6 +195,8 @@ class Comunidades:
             vib = float(v.get("vibracion") or 0)
             inc_c = max(0.0, inc - inc_r) if compensar else inc
             vib_c = max(0.0, vib - vib_r) if r_viva else vib
+            if vivo:
+                self._anotar_historial(n["id"], ahora, inc)
             se_mueve = vivo and (inc_c >= INC_MOVIMIENTO or vel >= VEL_MOVIMIENTO)
             vibra = vivo and vib_c >= VIB_MOVIMIENTO and not r_vibra
             mov_sostenido = self._sostenido((n["id"], "mov"), se_mueve, ahora)
@@ -160,7 +237,24 @@ class Comunidades:
             nivel = "normal"
         return nivel, motivos, detalle
 
-    def foto(self):
+    def tendencia(self, cid, ahora):
+        """Inclinación de A, B y R en los últimos minutos: {rol: [[segundos_atrás, grados], ...]}."""
+        resultado = {}
+        for rol, s in self.estado[cid]["sensores"].items():
+            if not s:
+                continue
+            puntos = self._historial.get(s["id"], ())
+            resultado[rol] = [[round((ahora - t) / 1000), inc] for t, inc in puntos]
+        return resultado
+
+    def resumen(self):
+        """Estado corto de cada comunidad con sensores, para las apps de la comunidad y de los sensores."""
+        return [{"id": cid, "nombre": self.config[cid]["nombre"], "zona": self.config[cid]["zona"],
+                 "nivel": st["nivel"], "motivo": st["motivos"][0] if st["motivos"] else "",
+                 "decision": st["decision"]}
+                for cid, st in self.estado.items() if st["sensores"]]
+
+    def foto(self, ahora=None):
         """Comunidades con al menos un sensor, para el panel."""
         resultado = []
         for cid, st in self.estado.items():
@@ -174,6 +268,7 @@ class Comunidades:
                 "nivel": st["nivel"], "nombre_nivel": NOMBRE_NIVEL[st["nivel"]],
                 "motivos": st["motivos"], "desde": st["desde"], "atendido_por": st["atendido_por"],
                 "sensores": st["sensores"], "avisos": st["avisos"][-3:],
+                "decision": st["decision"], "tendencia": self.tendencia(cid, ahora) if ahora else {},
                 "contactos_comite": len(c.get("contactos_comite", [])),
                 "contactos_alerta": len(c.get("contactos_alerta", [])),
             })

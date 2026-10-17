@@ -32,6 +32,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(mapa);
 const capas = {
   zonas: L.layerGroup().addTo(mapa),
+  comunidades: L.layerGroup().addTo(mapa),
   reportes: L.layerGroup().addTo(mapa),
   nodos: L.layerGroup().addTo(mapa),
   sismo: L.layerGroup().addTo(mapa),
@@ -218,8 +219,54 @@ function filaSensorBase(rol, s) {
     <small class="mono">${s.inclinacion_compensada.toFixed(2)}° · ${s.velocidad.toFixed(1)}°/min</small></div>`;
 }
 
+// Gráfica de los últimos 5 minutos: si A y B se separan de R, se mueve la ladera.
+function graficaTendencia(tendencia) {
+  const W = 300;
+  const H = 74;
+  const series = [['A', 'tend-a'], ['B', 'tend-b'], ['R', 'tend-r']].filter(([rol]) => (tendencia[rol] || []).length > 1);
+  if (!series.length) return '';
+  // La ventana se ajusta a los datos que hay: mínimo 1 minuto, máximo 5.
+  const masViejo = Math.max(...series.flatMap(([rol]) => tendencia[rol].map((p) => p[0])));
+  const VENTANA = Math.max(60, Math.min(300, masViejo));
+  const valores = series.flatMap(([rol]) => tendencia[rol].map((p) => p[1]));
+  const maxY = Math.max(1.2, Math.max(...valores) * 1.15);
+  const x = (seg) => W - (Math.min(seg, VENTANA) / VENTANA) * W;
+  const y = (g) => H - 4 - (Math.max(0, g) / maxY) * (H - 10);
+  const lineas = series.map(([rol, clase]) => {
+    const puntos = tendencia[rol].map(([seg, g]) => `${x(seg).toFixed(1)},${y(g).toFixed(1)}`).join(' ');
+    return `<polyline class="${clase}" points="${puntos}"/>`;
+  }).join('');
+  const umbral = y(0.5);
+  return `<figure class="tendencia">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Inclinación de A, B y R en los últimos 5 minutos">
+      <line class="tend-umbral" x1="0" x2="${W}" y1="${umbral.toFixed(1)}" y2="${umbral.toFixed(1)}"/>
+      <text class="tend-texto" x="${W - 2}" y="${(umbral - 3).toFixed(1)}" text-anchor="end">0,5° límite</text>
+      ${lineas}
+    </svg>
+    <figcaption><span class="ley-a">A</span><span class="ley-b">B</span><span class="ley-r">R</span><span>inclinación · últimos ${VENTANA >= 120 ? `${Math.round(VENTANA / 60)} min` : `${VENTANA} s`} · máx ${maxY.toFixed(1)}°</span></figcaption>
+  </figure>`;
+}
+
+function botonesComite(c) {
+  if (c.decision === 'confirmada') {
+    return `<div class="acciones-zona"><button class="btn btn-pequeno" data-decision="terminar" data-com-id="${c.id}">Terminar la alerta confirmada</button></div>`;
+  }
+  if (c.nivel !== 'atencion') return '';
+  return `<div class="acciones-zona">
+    <button class="btn btn-pequeno btn-ok" data-decision="falsa" data-com-id="${c.id}">Comité: es falsa alarma</button>
+    <button class="btn btn-pequeno btn-peligro" data-decision="confirmar" data-com-id="${c.id}">Comité: confirma daños</button>
+  </div>`;
+}
+
 function pintarComunidades() {
   const comunidades = estado.comunidades || [];
+  capas.comunidades.clearLayers();
+  comunidades.forEach((c) => {
+    L.circle([c.lat, c.lng], {
+      radius: 450, weight: 2, fillOpacity: c.nivel === 'normal' ? 0.06 : 0.2,
+      color: { normal: COLOR.verde, atencion: COLOR.amarillo, alerta: COLOR.rojo }[c.nivel],
+    }).bindTooltip(`${c.nombre} · ${c.nombre_nivel}`).addTo(capas.comunidades);
+  });
   $('comunidades').innerHTML = comunidades.map((c) => {
     const aviso = c.avisos.length ? c.avisos[c.avisos.length - 1] : null;
     const hace = c.desde ? Math.max(0, Math.round((estado.ahora - c.desde) / 60000)) : null;
@@ -230,6 +277,8 @@ function pintarComunidades() {
       </div>
       ${c.motivos.length ? `<ul class="razones">${c.motivos.slice(0, 3).map((m) => `<li>${VIGIA.esc(m)}</li>`).join('')}</ul>` : ''}
       <div class="trio">${['A', 'B', 'R'].map((rol) => filaSensor(rol, c.sensores[rol])).join('')}</div>
+      ${graficaTendencia(c.tendencia || {})}
+      ${botonesComite(c)}
       ${aviso ? `<p class="com-aviso">📨 ${aviso.nivel === 'alerta' ? 'Alerta' : 'Atención'}: aviso al ${VIGIA.esc(aviso.destino)} · ${VIGIA.hora(aviso.t)} · SMS ${VIGIA.esc(aviso.sms)}</p>` : ''}
       ${c.nivel !== 'normal' && hace !== null ? `<p class="nota">En ${c.nombre_nivel.toLowerCase()} desde hace ${hace} min${c.atendido_por ? ` · atendida por ${VIGIA.esc(c.atendido_por)}` : ''}</p>` : ''}
     </article>`;
@@ -460,6 +509,11 @@ async function iniciar() {
     }
   });
   $('comunidades').addEventListener('click', (e) => {
+    const decision = e.target.closest('[data-decision]');
+    if (decision) {
+      accion(`/api/comunidades/${encodeURIComponent(decision.dataset.comId)}/decision`, { decision: decision.dataset.decision }).catch(mostrarError);
+      return;
+    }
     const tarjeta = e.target.closest('[data-com]');
     const c = tarjeta && (estado.comunidades || []).find((x) => x.id === tarjeta.dataset.com);
     if (c) mapa.flyTo([c.lat, c.lng], 15);
