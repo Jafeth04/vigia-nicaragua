@@ -4,7 +4,9 @@
 
 const $ = (id) => document.getElementById(id);
 const COLOR = { verde: '#2ecc71', amarillo: '#f5b83d', rojo: '#ff4b4b', caido: '#6b7684' };
-const NOMBRE_ESTADO = { verde: 'Normal', amarillo: 'Precaución', rojo: 'Alerta', caido: 'Sin respuesta' };
+const NOMBRE_ESTADO = { verde: 'Normal', amarillo: 'Atención', rojo: 'Alerta', caido: 'Sin respuesta' };
+const CLASE_NIVEL = { normal: 'ok', atencion: 'warn', alerta: 'crit' };
+const NOMBRE_ROL = { A: 'A · ladera alta', B: 'B · ladera media', R: 'R · referencia' };
 const CLASE_ESTADO = { verde: 'ok', amarillo: 'warn', rojo: 'crit', caido: 'off' };
 const REPORTES_GRAVES = new Set(['atrapados', 'heridos', 'deslizamiento']);
 const ETIQUETAS = {
@@ -20,7 +22,8 @@ const marcadoresNodo = new Map();
 const marcadoresReporte = new Map();
 let sismo = null;
 
-const mapa = L.map('mapa', { zoomControl: true }).setView([12.45, -85.6], 7);
+// Vista inicial: el norte, donde están las comunidades de ladera del piloto.
+const mapa = L.map('mapa', { zoomControl: true }).setView([13.2, -86.15], 8);
 // Mapa de OpenStreetMap (no pide clave); el CSS lo oscurece para el tema de centro de mando.
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
@@ -47,9 +50,12 @@ function pintarResumen() {
   $('k-nodos-det').textContent = total ? `${plural(reales, 'celular real', 'celulares reales')} · ${total - reales} simulados` : 'Sin nodos conectados';
   $('kpi-nodos').className = 'kpi' + (cuenta.caido ? ' warn' : '');
 
-  $('k-alertas').textContent = cuenta.rojo;
-  $('k-alertas-det').textContent = `${cuenta.amarillo} en precaución · ${cuenta.caido} sin respuesta`;
-  $('kpi-alertas').className = 'kpi' + (cuenta.rojo ? ' crit' : cuenta.amarillo ? ' warn' : '');
+  const comunidades = estado.comunidades || [];
+  const enAlerta = comunidades.filter((c) => c.nivel === 'alerta').length;
+  const enAtencion = comunidades.filter((c) => c.nivel === 'atencion').length;
+  $('k-alertas').textContent = enAlerta;
+  $('k-alertas-det').textContent = `${enAtencion} en atención · ${plural(comunidades.length, 'vigilada', 'vigiladas')}`;
+  $('kpi-alertas').className = 'kpi' + (enAlerta ? ' crit' : enAtencion ? ' warn' : comunidades.length ? ' ok' : '');
 
   const pendientes = estado.reportes.filter((r) => !r.atendido_por);
   $('k-pedidos').textContent = pendientes.length;
@@ -63,12 +69,18 @@ function pintarResumen() {
   $('kpi-recursos').className = 'kpi' + (libresTot === 0 ? ' crit' : libresTot <= 3 ? ' warn' : ' ok');
 
   const general = $('estado-general');
-  if (estado.sismo) {
+  if (enAlerta) {
+    general.className = 'estado-general crit';
+    general.textContent = enAlerta === 1 ? 'Alerta de deslizamiento' : `${enAlerta} alertas de deslizamiento`;
+  } else if (estado.sismo) {
     general.className = 'estado-general crit';
     general.textContent = 'Sismo en curso';
   } else if (cuenta.rojo) {
     general.className = 'estado-general crit';
     general.textContent = plural(cuenta.rojo, 'alerta activa', 'alertas activas');
+  } else if (enAtencion) {
+    general.className = 'estado-general warn';
+    general.textContent = `Atención en ${plural(enAtencion, 'comunidad', 'comunidades')}`;
   } else if (cuenta.amarillo || pendientes.length || cuenta.caido) {
     general.className = 'estado-general warn';
     general.textContent = 'Atención';
@@ -86,10 +98,15 @@ function popupNodo(n) {
     return `<tr><td>${nombre}</td><td>${Number(v).toFixed(2)} ${unidad}</td></tr>`;
   }).join('');
   const hace = Math.max(0, Math.round((estado.ahora - n.ultimo_contacto) / 1000));
+  const comunidad = n.comunidad ? (estado.comunidades || []).find((c) => c.id === n.comunidad) : null;
+  const calibraciones = (n.calibraciones || []).slice(-4).map((c) =>
+    `<tr><td>Prueba ${c.real}°</td><td>${c.medido}° (${c.error >= 0 ? '+' : ''}${c.error}°)</td></tr>`).join('');
   return `<div class="popup">
     <b>${modo.emoji} ${VIGIA.esc(n.nombre)}</b>
     <span><span class="etq ${CLASE_ESTADO[n.estado_efectivo]}">${NOMBRE_ESTADO[n.estado_efectivo]}</span>
       <small>${n.simulado ? 'Nodo simulado' : 'Celular real'} · ${modo.nombre}</small></span>
+    ${n.rol ? `<small>Sensor ${NOMBRE_ROL[n.rol]} de ${VIGIA.esc(comunidad ? comunidad.nombre : n.comunidad)}</small>` : ''}
+    ${calibraciones ? `<table>${calibraciones}</table>` : ''}
     ${n.motivo ? `<span>${VIGIA.esc(n.motivo)}</span>` : ''}
     ${valores ? `<table>${valores}</table>` : ''}
     <small>${n.personas} personas · ${n.bateria != null ? `batería ${n.bateria}% · ` : ''}contacto hace ${hace} s</small>
@@ -106,6 +123,7 @@ function pintarNodos() {
     if (!m) {
       m = L.circleMarker([n.lat, n.lng], { weight: 3, fillOpacity: 1 }).addTo(capas.nodos);
       m.bindPopup('');
+      if (n.rol) m.bindTooltip(n.rol, { permanent: true, direction: 'right', offset: [8, 0], className: 'etiqueta-rol' });
       marcadoresNodo.set(n.id, m);
     }
     m.setLatLng([n.lat, n.lng]);
@@ -159,6 +177,39 @@ function pintarReportes() {
   for (const [id, m] of marcadoresReporte) {
     if (!vistos.has(id)) { capas.reportes.removeLayer(m); marcadoresReporte.delete(id); }
   }
+}
+
+// ---------- Comunidades de ladera (A, B y R) ----------
+function filaSensor(rol, s) {
+  if (!s) return `<div class="sensor-rol off"><span class="rol">${rol}</span><span>No instalado</span><small></small></div>`;
+  if (!s.conectado) return `<div class="sensor-rol off"><span class="rol">${rol}</span><span>Sin respuesta</span><small>${VIGIA.esc(s.nombre)}</small></div>`;
+  if (rol === 'R') {
+    const [clase, texto] = s.vibra ? ['warn', 'Vibra: sismo'] : s.inclinacion >= 1 ? ['warn', 'Movida: revisar'] : ['ok', 'Estable'];
+    return `<div class="sensor-rol ${clase}"><span class="rol">R</span><span>${texto}</span>
+      <small class="mono">${s.inclinacion.toFixed(2)}° · vib ${s.vibracion.toFixed(2)}</small></div>`;
+  }
+  const [clase, texto] = s.movimiento ? ['crit', 'Se mueve'] : s.en_observacion ? ['warn', 'En observación'] : ['ok', 'Quieto'];
+  return `<div class="sensor-rol ${clase}"><span class="rol">${rol}</span><span>${texto}</span>
+    <small class="mono">${s.inclinacion_compensada.toFixed(2)}° · ${s.velocidad.toFixed(1)}°/min</small></div>`;
+}
+
+function pintarComunidades() {
+  const comunidades = estado.comunidades || [];
+  $('comunidades').innerHTML = comunidades.map((c) => {
+    const aviso = c.avisos.length ? c.avisos[c.avisos.length - 1] : null;
+    const hace = c.desde ? Math.max(0, Math.round((estado.ahora - c.desde) / 60000)) : null;
+    return `<article class="com nivel-${c.nivel}" data-com="${c.id}">
+      <div class="com-cab">
+        <div><b>${VIGIA.esc(c.nombre)}</b><small>${VIGIA.esc(c.zona_nombre)} · ${c.personas} personas</small></div>
+        <span class="etq ${CLASE_NIVEL[c.nivel]}">${c.nombre_nivel}</span>
+      </div>
+      ${c.motivos.length ? `<ul class="razones">${c.motivos.slice(0, 3).map((m) => `<li>${VIGIA.esc(m)}</li>`).join('')}</ul>` : ''}
+      <div class="trio">${['A', 'B', 'R'].map((rol) => filaSensor(rol, c.sensores[rol])).join('')}</div>
+      ${aviso ? `<p class="com-aviso">📨 ${aviso.nivel === 'alerta' ? 'Alerta' : 'Atención'}: aviso al ${VIGIA.esc(aviso.destino)} · ${VIGIA.hora(aviso.t)} · SMS ${VIGIA.esc(aviso.sms)}</p>` : ''}
+      ${c.nivel !== 'normal' && hace !== null ? `<p class="nota">En ${c.nombre_nivel.toLowerCase()} desde hace ${hace} min${c.atendido_por ? ` · atendida por ${VIGIA.esc(c.atendido_por)}` : ''}</p>` : ''}
+    </article>`;
+  }).join('') || `<p class="vacio">No hay sensores de comunidad conectados. Configura un celular como sensor A, B o R,
+    o abre «Simulación» y prueba un deslizamiento.</p>`;
 }
 
 // ---------- Zonas y prioridades ----------
@@ -329,6 +380,7 @@ function animarSismo() {
 // ---------- General ----------
 function pintar() {
   pintarResumen();
+  pintarComunidades();
   pintarNodos();
   pintarReportes();
   pintarZonas();
@@ -381,6 +433,11 @@ async function iniciar() {
       const z = estado.zonas.find((x) => x.zona === ir.dataset.ir);
       if (z) mapa.flyTo([z.lat, z.lng], 12);
     }
+  });
+  $('comunidades').addEventListener('click', (e) => {
+    const tarjeta = e.target.closest('[data-com]');
+    const c = tarjeta && (estado.comunidades || []).find((x) => x.id === tarjeta.dataset.com);
+    if (c) mapa.flyTo([c.lat, c.lng], 15);
   });
   $('recursos').addEventListener('click', (e) => {
     const liberar = e.target.closest('.liberar');

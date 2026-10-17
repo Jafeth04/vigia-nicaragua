@@ -1,7 +1,12 @@
-"""VIGÍA – servidor local.
+"""VIGÍA – servidor del celular nodo.
 
-Sirve las tres apps web (nodo, comunidad y panel), las conecta en tiempo
-real por WebSocket, confirma sismos y calcula la priorización.
+Recibe por WiFi las lecturas de los celulares sensores (A, B y R de cada
+comunidad), decide el estado de la comunidad (Normal, Atención o Alerta) y
+avisa al comité o a los habitantes según el protocolo. También sirve las apps
+web (nodo, comunidad y panel) y, como ampliación, confirma sismos y prioriza.
+
+Puede correr en el celular nodo (Termux), en una computadora de la alcaldía
+o en la nube.
 
 Ejecutar (desde la carpeta vigia):
     python -m uvicorn server:app --host 0.0.0.0 --port 8000
@@ -17,8 +22,10 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+import notificador
 import prioridad
-from estado import (LUGARES_POR_ID, RECURSOS, TIPOS_LUGAR, TIPOS_REPORTE, Estado, ahora_ms, catalogo,
+from comunidades import NOMBRE_NIVEL, Comunidades
+from estado import (LUGARES_POR_ID, RECURSOS, ROLES, TIPOS_LUGAR, TIPOS_REPORTE, Estado, ahora_ms, catalogo,
                     estado_efectivo, interpretar_sms, lugar_mas_cercano)
 from simulador import Simulador
 from sismo import VP, VS, Sismos
@@ -27,6 +34,7 @@ ESTATICOS = Path(__file__).parent / "static"
 
 E = Estado()
 S = Sismos()
+C = Comunidades()
 paneles: set[WebSocket] = set()
 comunidad: set[WebSocket] = set()
 nodos_conectados: dict[str, WebSocket] = {}
@@ -53,7 +61,8 @@ def foto_estado():
         "ahora": ahora,
         "nodos": nodos,
         "reportes": reportes,
-        "zonas": prioridad.calcular(E, ahora),
+        "zonas": prioridad.calcular(E, ahora, C),
+        "comunidades": C.foto(),
         "recursos": E.recursos,
         "bitacora": E.bitacora[-40:][::-1],
         "sismo": S.evento if S.activo(ahora) else None,
@@ -85,10 +94,13 @@ async def bucle_de_difusion():
     """Envía el estado al panel cuando algo cambia (y cada 3 s igual,
     para que se note cuando un nodo deja de responder)."""
     global hay_cambios
-    ultimo_envio = ultimo_guardado = 0
+    ultimo_envio = ultimo_guardado = ultima_revision = 0
     while True:
         await asyncio.sleep(0.25)
         ahora = ahora_ms()
+        if ahora - ultima_revision >= 1000:  # también detecta sensores que dejaron de responder
+            ultima_revision = ahora
+            await revisar_comunidades()
         if hay_cambios or ahora - ultimo_envio > 3000:
             if hay_cambios:
                 E.pendiente_guardar = True
@@ -99,6 +111,52 @@ async def bucle_de_difusion():
         if E.pendiente_guardar and ahora - ultimo_guardado > 2000:
             E.guardar()
             ultimo_guardado = ahora
+
+
+def protocolo_aviso(nivel):
+    """Atención: solo el comité local. Alerta: todos los habitantes de la zona."""
+    return "comite" if nivel == "atencion" else "todos"
+
+
+async def revisar_comunidades():
+    """El celular nodo decide el estado de cada comunidad y avisa según el protocolo."""
+    ahora = ahora_ms()
+    for cid, antes, nivel, motivos in C.evaluar(E.nodos, ahora):
+        config = C.config[cid]
+        zona = LUGARES_POR_ID[config["zona"]]["nombre"]
+        motivo = motivos[0] if motivos else ""
+        marcar_cambio()
+        await avisar_sensores_de(cid)
+        if nivel == "normal":
+            E.registrar(f"🟢 {config['nombre']}: vuelve a Normal")
+            continue
+        if nivel == "alerta":
+            texto = (f"VIGIA ALERTA de deslizamiento en {config['nombre']}. {motivo}. "
+                     f"Sigue el plan de evacuación de tu comunidad.")
+            numeros = config.get("contactos_comite", []) + config.get("contactos_alerta", [])
+        else:
+            texto = f"VIGIA ATENCION en {config['nombre']}: {motivo}. Comité: verificar en el sitio."
+            numeros = config.get("contactos_comite", [])
+        E.registrar(f"{'🔴' if nivel == 'alerta' else '🟡'} {config['nombre']}: {NOMBRE_NIVEL[nivel].upper()}. {motivo}",
+                    "rojo" if nivel == "alerta" else "amarillo")
+        await enviar_a(comunidad, {
+            "tipo": "alerta_zona", "zona": config["zona"], "zona_nombre": zona, "comunidad": cid,
+            "nivel": nivel, "publico": protocolo_aviso(nivel), "mensaje": texto, "t": ahora,
+        })
+        resultado = await notificador.enviar(numeros, texto, ambas_sim=nivel == "alerta")
+        destino = "comité y habitantes" if nivel == "alerta" else "comité local"
+        C.estado[cid]["avisos"].append({"t": ahora, "nivel": nivel, "destino": destino, "sms": resultado})
+        E.registrar(f"📨 Aviso al {destino} de {config['nombre']}: app enviada; SMS {resultado}")
+
+
+async def avisar_sensores_de(cid):
+    """Los sensores de la comunidad muestran el estado que decidió el celular nodo."""
+    st = C.estado[cid]
+    mensaje = {"tipo": "estado_comunidad", "comunidad": cid, "nombre": C.config[cid]["nombre"],
+               "nivel": st["nivel"], "motivo": st["motivos"][0] if st["motivos"] else ""}
+    for n in E.nodos.values():
+        if n.get("comunidad") == cid:
+            await enviar_a_nodo(n["id"], mensaje)
 
 
 def alerta_sismo(evento):
@@ -114,8 +172,14 @@ async def procesar_mensaje_nodo(msg):
     tipo = msg.get("tipo")
     if tipo == "hola":
         nodo, nuevo = E.registrar_nodo(msg.get("nodo") or {})
-        if nodo and nuevo:
-            E.registrar(f"📡 Nodo conectado: {nodo['nombre']} ({LUGARES_POR_ID[nodo['zona']]['nombre']})")
+        if not nodo:
+            return
+        if nuevo:
+            donde = (f"{ROLES[nodo['rol']]} de {C.config[nodo['comunidad']]['nombre']}" if nodo.get("comunidad")
+                     else LUGARES_POR_ID[nodo["zona"]]["nombre"])
+            E.registrar(f"📡 Nodo conectado: {nodo['nombre']} ({donde})")
+        if nodo.get("comunidad"):
+            await avisar_sensores_de(nodo["comunidad"])
         marcar_cambio()
         return
 
@@ -126,6 +190,10 @@ async def procesar_mensaje_nodo(msg):
 
     if tipo == "estado":
         await actualizar_estado_nodo(nodo, msg)
+        if nodo.get("comunidad"):
+            await revisar_comunidades()
+    elif tipo == "calibracion":
+        registrar_calibracion(nodo, msg)
     elif tipo == "onda_p":
         await registrar_onda_p(nodo, msg)
     elif tipo == "onda_s":
@@ -153,18 +221,34 @@ async def actualizar_estado_nodo(nodo, msg):
     if nuevo == "rojo":
         nodo["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza, vuelve al ranking
     E.registrar(f"{'🔴' if nuevo == 'rojo' else '🟡'} {nodo['nombre']}: {nodo['motivo']}", nuevo)
+    if nodo.get("comunidad"):
+        return  # en una comunidad decide el celular nodo con A, B y R, no un sensor solo
     if nodo["modo"] in ("ladera", "rio"):
         zona = LUGARES_POR_ID[nodo["zona"]]["nombre"]
+        nivel = "alerta" if nuevo == "rojo" else "atencion"
         if nodo["modo"] == "ladera":
-            consejo = "Aléjate de laderas y cauces." if nuevo == "rojo" else "Mantente atento."
+            consejo = "Aléjate de laderas y cauces." if nivel == "alerta" else "Comité: verificar en el sitio."
             texto = f"Peligro de deslizamiento: {nodo['nombre']}. {nodo['motivo']}. {consejo}"
         else:
-            consejo = "Prepárate para evacuar." if nuevo == "rojo" else "Mantente atento."
+            consejo = "Prepárate para evacuar." if nivel == "alerta" else "Comité: vigilar el nivel."
             texto = f"Crecida del río: {nodo['nombre']}. {nodo['motivo']}. {consejo}"
         await enviar_a(comunidad, {
             "tipo": "alerta_zona", "zona": nodo["zona"], "zona_nombre": zona,
-            "nivel": nuevo, "mensaje": texto, "t": ahora_ms(),
+            "nivel": nivel, "publico": protocolo_aviso(nivel), "mensaje": texto, "t": ahora_ms(),
         })
+
+
+def registrar_calibracion(nodo, msg):
+    """Prueba de ángulo conocido: compara lo que mide el sensor con el ángulo real."""
+    try:
+        real = float(msg.get("real"))
+        medido = float(msg.get("medido"))
+    except (TypeError, ValueError):
+        return
+    nodo["calibraciones"] = (nodo.get("calibraciones", []) + [
+        {"t": ahora_ms(), "real": round(real, 2), "medido": round(medido, 2), "error": round(medido - real, 2)}
+    ])[-20:]
+    E.registrar(f"📐 {nodo['nombre']}: prueba de ángulo real {real:.1f}°, medido {medido:.1f}° (error {medido - real:+.1f}°)")
 
 
 async def registrar_onda_p(nodo, msg):
@@ -341,7 +425,7 @@ async def api_asignar(datos: dict):
         raise HTTPException(409, "No hay unidades libres de ese recurso")
     ahora = ahora_ms()
     recurso.update(zona=zona, desde=ahora)
-    cubiertos = prioridad.marcar_atendidos(E, zona, tipo, recurso["id"], ahora)
+    cubiertos = prioridad.marcar_atendidos(E, zona, tipo, recurso["id"], ahora, C)
     emoji, nombre, _ = RECURSOS[tipo]
     E.registrar(f"{emoji} {nombre} ({recurso['id']}) asignado a {LUGARES_POR_ID[zona]['nombre']}: "
                 f"cubre {cubiertos} pedido(s)")
@@ -373,6 +457,7 @@ async def api_config(datos: dict):
 async def api_reiniciar():
     SIM.detener()
     S.reiniciar()
+    C.reiniciar()
     E.reiniciar()
     E.registrar("Sistema reiniciado")
     for nid in list(nodos_conectados):
@@ -382,6 +467,11 @@ async def api_reiniciar():
 
 
 ESCENARIOS = {
+    # Núcleo: comunidad de ladera con A, B y R
+    "deslizamiento": SIM.deslizamiento,  # A se mueve, luego B coincide: Atención y después Alerta
+    "falsa_alarma": SIM.falsa_alarma,  # solo A se mueve (golpe en la estaca): se queda en Atención
+    "sismo_comunidad": SIM.sismo_comunidad,  # A, B y R vibran: R lo identifica como sismo
+    # Ampliación
     "sismo_costa": lambda: SIM.sismo(11.75, -86.75, 7.6, 25),  # subducción frente a la costa del Pacífico
     "sismo_managua": lambda: SIM.sismo(12.15, -86.27, 6.2, 5),  # falla local bajo la ciudad
     "lluvia": SIM.lluvia,

@@ -26,23 +26,44 @@
       </p>
 
       <div class="tarjeta">
-        <h2 class="titulo-seccion">¿Qué va a vigilar este celular?</h2>
+        <h2 class="titulo-seccion">¿Qué papel tiene este celular?</h2>
         <div class="modos" role="radiogroup">
-          <label class="modo"><input type="radio" name="modo" value="estructura">
-            <span class="ico" aria-hidden="true">🏫</span><b>Estructura</b><small>Sismos e inclinación de columnas y paredes</small></label>
           <label class="modo"><input type="radio" name="modo" value="ladera">
-            <span class="ico" aria-hidden="true">⛰️</span><b>Ladera</b><small>Deslizamientos lentos y lahares</small></label>
-          <label class="modo"><input type="radio" name="modo" value="rio">
-            <span class="ico" aria-hidden="true">🌊</span><b>Río</b><small>Nivel del agua con un brazo y flotador</small></label>
+            <span class="ico" aria-hidden="true">⛰️</span><b>Sensor de ladera (A o B)</b><small>Semienterrado en la ladera y anclado a una estaca. Mide cómo se inclina el terreno</small></label>
+          <label class="modo"><input type="radio" name="modo" value="referencia">
+            <span class="ico" aria-hidden="true">📍</span><b>Referencia (R)</b><small>En suelo estable. Compensa a A y B y detecta sismos</small></label>
         </div>
+        <details class="ampliacion">
+          <summary>Ampliación: otras amenazas</summary>
+          <div class="modos">
+            <label class="modo"><input type="radio" name="modo" value="estructura">
+              <span class="ico" aria-hidden="true">🏫</span><b>Estructura</b><small>Sismos e inclinación de columnas y paredes</small></label>
+            <label class="modo"><input type="radio" name="modo" value="rio">
+              <span class="ico" aria-hidden="true">🌊</span><b>Río</b><small>Nivel del agua con un brazo y flotador</small></label>
+          </div>
+        </details>
+      </div>
+
+      <div id="cfg-comunidad-caja" class="tarjeta">
+        <h2 class="titulo-seccion">Comunidad</h2>
+        <label class="campo">Comunidad
+          <select id="cfg-comunidad"></select>
+        </label>
+        <label id="cfg-rol-caja" class="campo">Posición en la ladera
+          <select id="cfg-rol">
+            <option value="A">A · ladera alta</option>
+            <option value="B">B · ladera media</option>
+          </select>
+        </label>
+        <p class="ayuda">El celular nodo de la comunidad compara A, B y R. Solo da Alerta cuando A y B se mueven a la vez.</p>
       </div>
 
       <div class="tarjeta">
         <h2 class="titulo-seccion">Dónde está instalado</h2>
-        <label class="campo">Nombre del nodo
-          <input id="cfg-nombre" placeholder="Ej.: Escuela Rubén Darío, columna norte">
+        <label class="campo">Nombre del sensor
+          <input id="cfg-nombre" placeholder="Ej.: Sensor A, estaca junto al cafetal">
         </label>
-        <div class="dos-col">
+        <div id="cfg-sitio" class="dos-col">
           <label class="campo">Tipo de lugar
             <select id="cfg-tipo">
               <option value="escuela">Escuela</option>
@@ -60,7 +81,7 @@
             <input id="cfg-personas" type="number" min="0" inputmode="numeric">
           </label>
         </div>
-        <label class="campo">Zona
+        <label id="cfg-lugar-caja" class="campo">Zona
           <select id="cfg-lugar"></select>
         </label>
         <div class="fila">
@@ -90,8 +111,9 @@
 
       <div id="semaforo" class="estado-nodo verde" role="status" aria-live="polite">
         <span class="foco" aria-hidden="true"></span>
-        <div><b id="txt-estado">NORMAL</b><small id="txt-motivo">Todo normal</small></div>
+        <div><span id="txt-quien" class="quien"></span><b id="txt-estado">NORMAL</b><small id="txt-motivo">Todo normal</small></div>
       </div>
+      <p id="txt-propio" class="propio" hidden></p>
 
       <div class="sismografo">
         <canvas id="sismografo" aria-label="Movimiento en vivo"></canvas>
@@ -103,6 +125,20 @@
       <div class="indicadores">
         <span id="ind-hz"></span><span id="ind-bateria"></span><span id="ind-cola"></span>
       </div>
+
+      <details id="prueba-angulo" class="tarjeta prueba-angulo">
+        <summary class="titulo-seccion">Prueba de ángulos conocidos</summary>
+        <p class="ayuda">Apoya el celular sobre una cuña de ángulo conocido (por ejemplo 5°, 10° y 15°) y registra lo que mide. Con estas pruebas se definen los umbrales.</p>
+        <p>Mide ahora: <b id="angulo-actual" class="mono">—</b></p>
+        <div class="fila">
+          <input id="angulo-real" type="number" step="0.1" inputmode="decimal" placeholder="Ángulo real (°)" style="flex:1;min-width:0">
+          <button id="btn-angulo" class="btn">Registrar</button>
+        </div>
+        <table class="tabla-angulos">
+          <thead><tr><th>Real</th><th>Medido</th><th>Error</th></tr></thead>
+          <tbody id="tabla-angulos"></tbody>
+        </table>
+      </details>
 
       <div class="tarjeta">
         <h2 class="titulo-seccion">Eventos</h2>

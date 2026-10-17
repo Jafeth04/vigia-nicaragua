@@ -20,7 +20,7 @@ const RANGO = { verde: 0, amarillo: 1, rojo: 2 };
 const CLAVE = 'vigia-nodo';
 let cfg = {
   id: 'nodo-' + VIGIA.uid().slice(0, 8),
-  nombre: '', modo: 'estructura', tipo_lugar: 'escuela', personas: 300,
+  nombre: '', modo: 'ladera', comunidad: 'prueba', rol: 'A', tipo_lugar: 'ladera', personas: 0,
   lugar: 'managua', lat: null, lng: null,
   brazo_cm: 20, umbral_am_cm: 5, umbral_rojo_cm: 10, invertir: false,
   ...VIGIA.leer(CLAVE, {}),
@@ -167,14 +167,19 @@ function evaluar() {
       lectura = { inclinacion, sacudida: sl.staM, pga, sta_lta: sl.staV / Math.max(sl.ltaV, 0.005), ruido: sl.ltaV, hz };
       if (sostenido.rojo >= U.sostener_s) subir('rojo', `Inclinación permanente ${inclinacion.toFixed(1)}°`);
       else if (sostenido.amarillo >= U.sostener_s) subir('amarillo', `Inclinación ${inclinacion.toFixed(1)}°`);
-    } else { // ladera
+    } else { // ladera (A o B) y referencia (R): el celular nodo decide con los tres
       const U = UMBRALES.ladera;
       const velocidad = velocidadPorMinuto(t, inclinacion);
       segundosVibrando = sl.staM > U.vibracion ? segundosVibrando + 1 : 0;
       lectura = { inclinacion, vel_inclinacion: velocidad, vibracion: sl.staM, pga, ruido: sl.ltaV, hz };
-      if (segundosVibrando >= U.vibracion_s) subir('rojo', 'Vibración continua del suelo (posible lahar)');
-      if (inclinacion > U.incRojo || velocidad > U.velRojo) subir('rojo', `Ladera en movimiento: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
-      else if (inclinacion > U.incAmarillo || velocidad > U.velAmarillo) subir('amarillo', `Ladera inclinándose: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
+      if (cfg.modo === 'referencia') {
+        if (inclinacion > 1) subir('amarillo', `Referencia movida ${inclinacion.toFixed(1)}°: revisar anclaje`);
+        if (segundosVibrando >= U.vibracion_s) subir('amarillo', 'Vibración en la referencia (posible sismo)');
+      } else {
+        if (segundosVibrando >= U.vibracion_s) subir('rojo', 'Vibración continua del terreno');
+        if (inclinacion > U.incRojo || velocidad > U.velRojo) subir('rojo', `Movimiento: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
+        else if (inclinacion > U.incAmarillo || velocidad > U.velAmarillo) subir('amarillo', `Movimiento: ${inclinacion.toFixed(1)}° (${velocidad.toFixed(1)}°/min)`);
+      }
     }
     if (pga > UMBRALES.sacudida.rojo) subir('rojo', `Sacudida fuerte (${pga.toFixed(1)} m/s²)`);
     else if (pga > UMBRALES.sacudida.amarillo) subir('amarillo', `Sacudida moderada (${pga.toFixed(1)} m/s²)`);
@@ -204,6 +209,8 @@ function enviarHola() {
     nodo: {
       id: cfg.id, nombre: cfg.nombre || cfg.id, modo: cfg.modo, tipo_lugar: cfg.tipo_lugar,
       personas: Number(cfg.personas) || 0, lugar: cfg.lugar, lat: cfg.lat, lng: cfg.lng,
+      comunidad: enComunidad() ? cfg.comunidad : null,
+      rol: cfg.modo === 'referencia' ? 'R' : cfg.modo === 'ladera' ? cfg.rol : null,
     },
   }, { encolar: false });
   nivelEnviado = '';
@@ -222,9 +229,17 @@ function enviarEstado() {
   ultimoEnvio = ahora;
 }
 
+const enComunidad = () => (cfg.modo === 'ladera' || cfg.modo === 'referencia') && !!cfg.comunidad;
+let estadoComunidad = null; // lo que decidió el celular nodo con A, B y R
+
 function alMensaje(msg) {
   if (msg.tipo === 'restablecer') restablecer('desde el panel');
-  if (msg.tipo === 'reiniciado') { restablecer('el sistema se reinició'); enviarHola(); }
+  if (msg.tipo === 'reiniciado') { restablecer('el sistema se reinició'); estadoComunidad = null; enviarHola(); }
+  if (msg.tipo === 'estado_comunidad' && enComunidad()) {
+    if (estadoComunidad && estadoComunidad.nivel !== msg.nivel) anotar(`Comunidad: ${NOMBRE_COMUNIDAD[msg.nivel]}. ${msg.motivo}`);
+    estadoComunidad = msg;
+    pintar();
+  }
 }
 
 // ---------- Control ----------
@@ -370,16 +385,41 @@ const ETIQUETAS = {
   ruido: ['Ruido de fondo', 'm/s²'],
   hz: ['Lecturas por segundo', ''],
 };
-const NOMBRE_MODO = { estructura: '🏫 Estructura · sismo e inclinación', ladera: '⛰️ Ladera · deslizamiento y lahar', rio: '🌊 Río · nivel del agua' };
-const NOMBRE_NIVEL = { verde: 'NORMAL', amarillo: 'PRECAUCIÓN', rojo: 'ALERTA' };
+const NOMBRE_MODO = {
+  ladera: '⛰️ Sensor de ladera', referencia: '📍 Referencia R · suelo estable',
+  estructura: '🏫 Estructura · sismo e inclinación', rio: '🌊 Río · nivel del agua',
+};
+const NOMBRE_NIVEL = { verde: 'NORMAL', amarillo: 'ATENCIÓN', rojo: 'ALERTA' };
+const NOMBRE_COMUNIDAD = { normal: 'NORMAL', atencion: 'ATENCIÓN', alerta: 'ALERTA' };
+const COLOR_COMUNIDAD = { normal: 'verde', atencion: 'amarillo', alerta: 'rojo' };
+
+function nombreComunidad() {
+  const c = catalogo && catalogo.comunidades.find((x) => x.id === cfg.comunidad);
+  return c ? c.nombre : cfg.comunidad;
+}
 
 function pintar() {
   if ($('vista-monitor').hidden) return;
   $('txt-nombre').textContent = cfg.nombre || cfg.id;
-  $('txt-modo').textContent = NOMBRE_MODO[cfg.modo];
-  $('semaforo').className = `estado-nodo ${calibrando ? 'calibrando' : alarma.nivel}`;
-  $('txt-estado').textContent = calibrando ? 'CALIBRANDO' : NOMBRE_NIVEL[alarma.nivel];
-  $('txt-motivo').textContent = alarma.motivo;
+  const rol = cfg.modo === 'ladera' ? ` ${cfg.rol}` : '';
+  $('txt-modo').textContent = enComunidad() ? `${NOMBRE_MODO[cfg.modo]}${rol} · ${nombreComunidad()}` : NOMBRE_MODO[cfg.modo];
+  const propio = $('txt-propio');
+  if (enComunidad() && estadoComunidad && !calibrando) {
+    // El semáforo grande muestra lo que decidió el celular nodo; abajo, lo que mide este sensor.
+    $('semaforo').className = `estado-nodo ${COLOR_COMUNIDAD[estadoComunidad.nivel]}`;
+    $('txt-quien').textContent = 'Comunidad';
+    $('txt-estado').textContent = NOMBRE_COMUNIDAD[estadoComunidad.nivel];
+    $('txt-motivo').textContent = estadoComunidad.motivo || 'Sin movimiento en la ladera';
+    propio.hidden = false;
+    propio.textContent = `Este sensor: ${alarma.nivel === 'verde' ? 'sin movimiento' : alarma.motivo}`;
+  } else {
+    $('semaforo').className = `estado-nodo ${calibrando ? 'calibrando' : alarma.nivel}`;
+    $('txt-quien').textContent = enComunidad() ? 'Este sensor' : '';
+    $('txt-estado').textContent = calibrando ? 'CALIBRANDO' : NOMBRE_NIVEL[alarma.nivel];
+    $('txt-motivo').textContent = alarma.motivo;
+    propio.hidden = true;
+  }
+  $('angulo-actual').textContent = g && g0 ? `${anguloGrados(g, g0).toFixed(2)}°` : '—';
   $('lecturas').innerHTML = Object.entries(lectura).map(([k, v]) => {
     const [nombre, unidad] = ETIQUETAS[k] || [k, ''];
     const decimales = k === 'hz' ? 0 : k === 'nivel_cm' ? 1 : 2;
@@ -404,7 +444,7 @@ function anotar(texto) {
   while ($('registro').children.length > 8) $('registro').lastChild.remove();
 }
 
-const modoElegido = () => (document.querySelector('input[name="modo"]:checked') || { value: 'estructura' }).value;
+const modoElegido = () => (document.querySelector('input[name="modo"]:checked') || { value: 'ladera' }).value;
 
 function alertaEnPagina(texto) {
   const aviso = $('aviso-seguro');
@@ -433,7 +473,10 @@ function llenarFormulario() {
   $('cfg-umbral-am').value = cfg.umbral_am_cm;
   $('cfg-umbral-rojo').value = cfg.umbral_rojo_cm;
   $('cfg-invertir').checked = cfg.invertir;
-  $('cfg-rio').hidden = cfg.modo !== 'rio';
+  $('cfg-comunidad').value = cfg.comunidad;
+  $('cfg-rol').value = cfg.rol;
+  if (cfg.modo === 'estructura' || cfg.modo === 'rio') document.querySelector('details.ampliacion').open = true;
+  mostrarCamposSegunModo(cfg.modo);
   $('txt-ubicacion').textContent = cfg.lat !== null ? `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}` : '';
 }
 
@@ -448,18 +491,58 @@ function leerFormulario() {
   cfg.umbral_am_cm = Number($('cfg-umbral-am').value) || 5;
   cfg.umbral_rojo_cm = Number($('cfg-umbral-rojo').value) || 10;
   cfg.invertir = $('cfg-invertir').checked;
+  cfg.comunidad = $('cfg-comunidad').value;
+  cfg.rol = $('cfg-rol').value;
+  if (enComunidad()) cfg.tipo_lugar = 'ladera';
+  estadoComunidad = null;
   VIGIA.guardar(CLAVE, cfg);
+}
+
+function mostrarCamposSegunModo(modo) {
+  const comunidad = modo === 'ladera' || modo === 'referencia';
+  $('cfg-rio').hidden = modo !== 'rio';
+  $('cfg-comunidad-caja').hidden = !comunidad;
+  $('cfg-rol-caja').hidden = modo !== 'ladera';
+  $('cfg-sitio').hidden = comunidad; // en una comunidad, el lugar y las personas vienen de la comunidad
+  $('cfg-lugar-caja').hidden = comunidad;
+}
+
+// ---------- Prueba de ángulos conocidos ----------
+const CLAVE_ANGULOS = 'vigia-angulos';
+
+function pintarAngulos() {
+  const pruebas = VIGIA.leer(CLAVE_ANGULOS, []);
+  $('tabla-angulos').innerHTML = pruebas.map((p) =>
+    `<tr><td>${p.real.toFixed(1)}°</td><td>${p.medido.toFixed(2)}°</td><td>${p.error >= 0 ? '+' : ''}${p.error.toFixed(2)}°</td></tr>`).join('')
+    || '<tr><td colspan="3">Aún no hay pruebas.</td></tr>';
+}
+
+function registrarAngulo() {
+  const real = Number($('angulo-real').value);
+  if (!g || !g0) { anotar('Primero calibra el sensor en posición plana'); return; }
+  if (!Number.isFinite(real) || $('angulo-real').value === '') { anotar('Escribe el ángulo real de la cuña'); return; }
+  const medido = anguloGrados(g, g0);
+  const pruebas = VIGIA.leer(CLAVE_ANGULOS, []);
+  pruebas.unshift({ real, medido, error: medido - real });
+  VIGIA.guardar(CLAVE_ANGULOS, pruebas.slice(0, 12));
+  conexion.enviar({ tipo: 'calibracion', id: cfg.id, real, medido });
+  anotar(`📐 Ángulo real ${real.toFixed(1)}°, medido ${medido.toFixed(2)}°`);
+  $('angulo-real').value = '';
+  pintarAngulos();
 }
 
 async function iniciarPagina() {
   if (!window.isSecureContext) $('aviso-seguro').hidden = false;
   catalogo = await VIGIA.catalogo();
   $('cfg-lugar').innerHTML = catalogo.lugares.map((l) => `<option value="${l.id}">${VIGIA.esc(l.nombre)}</option>`).join('');
+  $('cfg-comunidad').innerHTML = catalogo.comunidades.map((c) => `<option value="${c.id}">${VIGIA.esc(c.nombre)}</option>`).join('');
   llenarFormulario();
+  pintarAngulos();
 
   document.querySelectorAll('input[name="modo"]').forEach((radio) => radio.addEventListener('change', () => {
-    $('cfg-rio').hidden = modoElegido() !== 'rio';
+    mostrarCamposSegunModo(modoElegido());
   }));
+  $('btn-angulo').addEventListener('click', registrarAngulo);
   $('btn-gps').addEventListener('click', () => {
     if (!navigator.geolocation) { $('txt-ubicacion').textContent = 'Este navegador no tiene GPS'; return; }
     $('txt-ubicacion').textContent = 'Buscando…';

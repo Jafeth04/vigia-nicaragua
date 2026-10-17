@@ -15,6 +15,11 @@ ARCHIVO = Path(__file__).parent / "estado.json"
 # Zonas de trabajo del prototipo (Nicaragua). Cada reporte y cada nodo se
 # asigna a la zona más cercana.
 LUGARES = [
+    # Norte: comunidades de ladera (núcleo del piloto)
+    {"id": "jinotega", "nombre": "Jinotega", "lat": 13.0910, "lng": -86.0023},
+    {"id": "somoto", "nombre": "Somoto (Madriz)", "lat": 13.4806, "lng": -86.5836},
+    {"id": "ocotal", "nombre": "Ocotal (Nueva Segovia)", "lat": 13.6317, "lng": -86.4756},
+    # Ampliación: resto del país
     {"id": "managua", "nombre": "Managua", "lat": 12.1364, "lng": -86.2514},
     {"id": "ciudad_sandino", "nombre": "Ciudad Sandino", "lat": 12.1580, "lng": -86.3440},
     {"id": "tipitapa", "nombre": "Tipitapa", "lat": 12.1975, "lng": -86.0971},
@@ -40,7 +45,7 @@ RECURSOS = {
     "ambulancia": ("🚑", "Ambulancia", 2),
     "maquinaria": ("🚜", "Maquinaria", 1),
     "evacuacion": ("🚌", "Evacuación", 2),
-    "evaluacion": ("🏗️", "Evaluación estructural", 2),
+    "evaluacion": ("🔎", "Inspección en sitio", 2),
     "viveres": ("📦", "Víveres", 3),
 }
 
@@ -54,7 +59,13 @@ TIPOS_REPORTE = {
     "necesidades": ("💧", "Agua / alimentos / refugio"),
 }
 
-MODOS = {"estructura": ("🏫", "Estructura"), "ladera": ("⛰️", "Ladera"), "rio": ("🌊", "Río")}
+MODOS = {
+    "ladera": ("⛰️", "Sensor de ladera"),
+    "referencia": ("📍", "Referencia"),
+    "estructura": ("🏫", "Estructura"),
+    "rio": ("🌊", "Río"),
+}
+ROLES = {"A": "Sensor A · ladera alta", "B": "Sensor B · ladera media", "R": "Referencia R · suelo estable"}
 TIPOS_LUGAR = {"casa", "escuela", "hospital", "asilo", "edificio", "puente", "ladera", "rio", "otro"}
 
 NODO_CAIDO_MS = 30_000  # sin noticias durante este tiempo = nodo caído
@@ -83,6 +94,15 @@ def estado_efectivo(nodo, ahora):
     return nodo["estado"]
 
 
+# Comunidades de ladera con su trío de sensores (A, B y R). Se editan en comunidades.json,
+# incluidos los teléfonos del comité y de los habitantes que reciben los SMS.
+COMUNIDADES = json.loads((Path(__file__).parent / "comunidades.json").read_text(encoding="utf-8"))
+COMUNIDADES_POR_ID = {c["id"]: c for c in COMUNIDADES}
+
+# Desplazamiento en el mapa de cada rol respecto al centro de su comunidad
+_POSICION_ROL = {"A": (0.0040, 0.0030), "B": (0.0020, 0.0015), "R": (-0.0015, -0.0020)}
+
+
 def catalogo():
     """Listas que comparten el servidor y las apps web."""
     return {
@@ -90,6 +110,8 @@ def catalogo():
         "recursos": {k: {"emoji": e, "nombre": n, "total": t} for k, (e, n, t) in RECURSOS.items()},
         "tipos_reporte": {k: {"emoji": e, "nombre": n} for k, (e, n) in TIPOS_REPORTE.items()},
         "modos": {k: {"emoji": e, "nombre": n} for k, (e, n) in MODOS.items()},
+        "roles": ROLES,
+        "comunidades": [{"id": c["id"], "nombre": c["nombre"], "zona": c["zona"]} for c in COMUNIDADES],
     }
 
 
@@ -159,15 +181,26 @@ class Estado:
         nid = str(datos.get("id") or "")[:60]
         if not nid:
             return None, False
+        modo = datos.get("modo") if datos.get("modo") in MODOS else "estructura"
+        comunidad = datos.get("comunidad") if datos.get("comunidad") in COMUNIDADES_POR_ID and modo in ("ladera", "referencia") else None
+        rol = datos.get("rol") if comunidad and datos.get("rol") in ROLES else None
         lat, lng = datos.get("lat"), datos.get("lng")
         if lat is None or lng is None:
-            lugar = LUGARES_POR_ID.get(datos.get("lugar"), LUGARES[0])
-            lat, lng = lugar["lat"], lugar["lng"]
+            if comunidad:
+                c = COMUNIDADES_POR_ID[comunidad]
+                dlat, dlng = _POSICION_ROL.get(rol, (0, 0))
+                lat, lng = c["lat"] + dlat, c["lng"] + dlng
+            else:
+                lugar = LUGARES_POR_ID.get(datos.get("lugar"), LUGARES[0])
+                lat, lng = lugar["lat"], lugar["lng"]
         previo = self.nodos.get(nid, {})
         nodo = {
             "id": nid,
             "nombre": str(datos.get("nombre") or nid)[:80],
-            "modo": datos.get("modo") if datos.get("modo") in MODOS else "estructura",
+            "modo": modo,
+            "comunidad": comunidad,
+            "rol": rol,
+            "calibraciones": previo.get("calibraciones", []),
             "tipo_lugar": datos.get("tipo_lugar") if datos.get("tipo_lugar") in TIPOS_LUGAR else "otro",
             "personas": max(0, int(datos.get("personas") or 0)),
             "lat": float(lat),

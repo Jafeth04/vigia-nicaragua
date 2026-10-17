@@ -23,7 +23,7 @@
     <section id="estado-alertas" class="estado-alertas inactiva" style="margin-top:16px">
       <span class="icono" id="alertas-icono">🔕</span>
       <b id="alertas-titulo">Alertas sin activar</b>
-      <p id="alertas-texto">Actívalas para escuchar la sirena si se detecta un sismo o un peligro en tu zona. Deja esta página abierta.</p>
+      <p id="alertas-texto">Actívalas para escuchar la sirena si hay alerta de deslizamiento en tu comunidad. Deja esta página abierta.</p>
       <div class="acciones">
         <button id="btn-alertas" class="btn btn-primario">🔔 Activar alertas</button>
         <button id="btn-probar" class="btn-texto">Probar alerta (10 s)</button>
@@ -89,6 +89,8 @@
       <summary>Mi ubicación y ajustes <span id="resumen-zona"></span></summary>
       <div class="contenido">
         <label class="campo">Mi zona <select id="zona"></select></label>
+        <label class="check"><input id="es-comite" type="checkbox"> Soy del comité local: recibo también los avisos de Atención</label>
+        <p class="ayuda">Atención: un solo sensor se movió y el comité verifica en el sitio. Alerta: dos sensores coinciden y se avisa a todos los habitantes.</p>
         <div class="fila">
           <button id="btn-gps" class="btn btn-pequeno">📍 Usar mi GPS</button>
           <small id="txt-gps" class="ayuda"></small>

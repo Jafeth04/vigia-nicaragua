@@ -9,7 +9,7 @@ const CLAVE_COLA = 'vigia-cola';
 const CLAVE_HISTORIAL = 'vigia-mis-reportes';
 
 let catalogo = null;
-let cfg = { zona: 'managua', lat: null, lng: null, numeroSms: '', ...VIGIA.leer(CLAVE_CFG, {}) };
+let cfg = { zona: 'jinotega', lat: null, lng: null, numeroSms: '', comite: false, ...VIGIA.leer(CLAVE_CFG, {}) };
 let tipoElegido = null;
 let fotoActual = null;
 let enviando = false;
@@ -308,19 +308,29 @@ function cerrarAlerta() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
+// Protocolo: Atención llega solo al comité local de esa zona; Alerta llega a todos.
 function alertaZona(msg) {
   const mia = msg.zona === cfg.zona;
+  if (msg.publico === 'comite' && !(cfg.comite && mia)) return;
+  const alerta = msg.nivel === 'alerta';
   const div = document.createElement('div');
-  div.className = `alerta-zona ${msg.nivel} ${mia ? 'mia' : ''}`;
-  div.innerHTML = `<b>${mia ? '⚠️ TU ZONA · ' : ''}${VIGIA.esc(msg.zona_nombre)}</b>
-    <span>${VIGIA.esc(msg.mensaje)}</span><small>${VIGIA.hora(msg.t)}</small>`;
+  div.className = `alerta-zona ${alerta ? 'rojo' : ''} ${mia ? 'mia' : ''}`;
+  const titulo = alerta ? 'ALERTA' : 'ATENCIÓN · COMITÉ';
+  div.innerHTML = `<b>${titulo} · ${mia ? 'TU ZONA · ' : ''}${VIGIA.esc(msg.zona_nombre)}</b>
+    <span>${VIGIA.esc(msg.mensaje.replace(/^VIGIA /, ''))}</span><small>${VIGIA.hora(msg.t)}</small>`;
   div.addEventListener('click', () => div.remove());
   $('alertas-zona').prepend(div);
   while ($('alertas-zona').children.length > 3) $('alertas-zona').lastChild.remove();
-  if (mia) {
-    sonarSirena(3);
-    hablar(`Alerta en tu zona. ${msg.mensaje}`);
-    if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+  if (!mia) return;
+  const texto = msg.mensaje.replace(/^VIGIA /, '');
+  if (alerta) {
+    sonarSirena(8);
+    hablar(`Alerta en tu comunidad. ${texto}`);
+    if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 600]);
+  } else {
+    sonarSirena(2);
+    hablar(`Aviso para el comité. ${texto}`);
+    if (navigator.vibrate) navigator.vibrate([300, 200, 300]);
   }
 }
 
@@ -332,7 +342,7 @@ function pintarConexion(ok) {
 
 function pintarZona() {
   const lugar = catalogo.lugares.find((l) => l.id === cfg.zona);
-  $('resumen-zona').textContent = `${lugar ? lugar.nombre : ''}${cfg.lat !== null ? ' · GPS' : ''}`;
+  $('resumen-zona').textContent = `${lugar ? lugar.nombre : ''}${cfg.lat !== null ? ' · GPS' : ''}${cfg.comite ? ' · comité' : ''}`;
 }
 
 async function iniciar() {
@@ -340,6 +350,8 @@ async function iniciar() {
   $('zona').innerHTML = catalogo.lugares.map((l) => `<option value="${l.id}">${VIGIA.esc(l.nombre)}</option>`).join('');
   $('zona').value = cfg.zona;
   $('numero-sms').value = cfg.numeroSms;
+  $('es-comite').checked = !!cfg.comite;
+  $('es-comite').addEventListener('change', () => { cfg.comite = $('es-comite').checked; guardarCfg(); pintarZona(); });
   if (cfg.lat !== null) $('txt-gps').textContent = `GPS: ${cfg.lat.toFixed(4)}, ${cfg.lng.toFixed(4)}`;
 
   const graves = new Set(['atrapados', 'heridos', 'deslizamiento']);

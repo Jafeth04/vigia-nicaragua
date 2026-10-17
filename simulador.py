@@ -31,6 +31,15 @@ NODOS_VIRTUALES = [
 ]
 
 
+# Trío de sensores de una comunidad de ladera virtual (núcleo del piloto)
+COMUNIDAD_VIRTUAL = "piloto-jinotega"
+SENSORES_COMUNIDAD = [
+    ("sim-jin-A", "Sensor A · ladera alta", "ladera", "A"),
+    ("sim-jin-B", "Sensor B · ladera media", "ladera", "B"),
+    ("sim-jin-R", "Referencia R · casa comunal", "referencia", "R"),
+]
+
+
 def posicion(nodo):
     lugar = LUGARES_POR_ID[nodo[5]]
     return lugar["lat"] + nodo[6], lugar["lng"] + nodo[7]
@@ -83,14 +92,93 @@ class Simulador:
                 "id": nid, "nombre": nombre, "modo": modo, "tipo_lugar": tipo, "personas": personas,
                 "lugar": zona, "lat": lat, "lng": lng, "simulado": True,
             }})
+        for nid, nombre, modo, rol in SENSORES_COMUNIDAD:
+            await self.procesar({"tipo": "hola", "nodo": {
+                "id": nid, "nombre": nombre, "modo": modo, "tipo_lugar": "ladera", "personas": 0,
+                "comunidad": COMUNIDAD_VIRTUAL, "rol": rol, "simulado": True,
+            }})
+            await self._sensor(nid, 0.05, 0.0, 0.02)
         self.latido = self._lanzar(self._latir())
 
     async def _latir(self):
+        ids = [n[0] for n in NODOS_VIRTUALES] + [s[0] for s in SENSORES_COMUNIDAD]
         while True:
-            for nodo in NODOS_VIRTUALES:
-                if nodo[0] not in self.silenciados:
-                    await self.procesar({"tipo": "latido", "id": nodo[0]})
+            for nid in ids:
+                if nid not in self.silenciados:
+                    await self.procesar({"tipo": "latido", "id": nid})
             await asyncio.sleep(10)
+
+    # ---------- Comunidad de ladera: A, B y R ----------
+
+    async def _sensor(self, nid, inclinacion, velocidad, vibracion):
+        """Lo que mandaría un celular sensor: sus lecturas y su estado propio."""
+        se_mueve = inclinacion >= 0.5 or velocidad >= 0.2
+        await self.procesar({
+            "tipo": "estado", "id": nid,
+            "estado": "amarillo" if se_mueve or vibracion >= 0.15 else "verde",
+            "motivo": f"Movimiento: {inclinacion:.1f}° ({velocidad:.1f}°/min)" if se_mueve
+            else "Vibración del terreno" if vibracion >= 0.15 else "Todo normal",
+            "valores": {"inclinacion": round(inclinacion, 2), "vel_inclinacion": round(velocidad, 2),
+                        "vibracion": round(vibracion, 2)},
+            "bateria": 82,
+        })
+
+    async def _calmar_comunidad(self):
+        for nid, *_ in SENSORES_COMUNIDAD:
+            await self._sensor(nid, 0.05, 0.0, 0.02)
+
+    async def deslizamiento(self):
+        """A empieza a inclinarse (Atención); a los 24 s B lo confirma (Alerta)."""
+        await self.asegurar_nodos()
+        await self._calmar_comunidad()
+
+        async def guion():
+            for paso in range(0, 46):
+                t = paso * 2
+                inc_a = 0.1 if t < 6 else min(3.5, 0.1 + 0.06 * (t - 6))
+                inc_b = 0.1 if t < 24 else min(3.0, 0.1 + 0.05 * (t - 24))
+                vel_a = 0.0 if t < 6 or inc_a >= 3.5 else 1.8
+                vel_b = 0.0 if t < 24 or inc_b >= 3.0 else 1.5
+                await self._sensor("sim-jin-A", inc_a, vel_a, 0.03)
+                await self._sensor("sim-jin-B", inc_b, vel_b, 0.03)
+                await self._sensor("sim-jin-R", 0.05, 0.0, 0.02)
+                await asyncio.sleep(2)
+        self._lanzar(guion())
+        for retraso, tipo in ((40, "deslizamiento"), (48, "ruta"), (55, "necesidades")):
+            self._despues(retraso, lambda tipo=tipo: self._reporte(tipo, LUGARES_POR_ID["jinotega"]))
+
+    async def falsa_alarma(self):
+        """Un golpe (un animal, una rama) inclina solo la estaca de A. B y R siguen quietos."""
+        await self.asegurar_nodos()
+        await self._calmar_comunidad()
+
+        async def guion():
+            for paso in range(0, 25):
+                t = paso * 2
+                inc_a = 0.05 if t < 4 else 3.2
+                await self._sensor("sim-jin-A", inc_a, 0.0, 0.03)
+                await self._sensor("sim-jin-B", 0.06, 0.0, 0.02)
+                await self._sensor("sim-jin-R", 0.04, 0.0, 0.02)
+                await asyncio.sleep(2)
+        self._lanzar(guion())
+
+    async def sismo_comunidad(self):
+        """Un sismo sacude los tres celulares: R también vibra y lo identifica."""
+        await self.asegurar_nodos()
+        await self._calmar_comunidad()
+        origen = ahora_ms()
+        for i, (nid, *_) in enumerate(SENSORES_COMUNIDAD):
+            self._despues(1 + i * 0.2, lambda nid=nid, i=i: self.procesar(
+                {"tipo": "onda_p", "id": nid, "t": origen + 1000 + i * 200}))
+
+        async def guion():
+            for paso in range(0, 16):
+                t = paso * 2
+                vib = 0.4 if 2 <= t <= 20 else 0.02
+                for nid, *_ in SENSORES_COMUNIDAD:
+                    await self._sensor(nid, 0.08, 0.0, vib)
+                await asyncio.sleep(2)
+        self._lanzar(guion())
 
     # ---------- Sismo ----------
 

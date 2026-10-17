@@ -40,8 +40,8 @@ def recurso_de_nodo(nodo):
 
 
 def item_de_nodo(nodo, ahora, ultimo_sismo_t):
-    if nodo.get("atendido_por"):
-        return None
+    if nodo.get("atendido_por") or nodo.get("comunidad"):
+        return None  # los sensores de una comunidad cuentan a través de la comunidad
     estado = estado_efectivo(nodo, ahora)
     recurso = recurso_de_nodo(nodo)
     if estado == "rojo":
@@ -59,6 +59,21 @@ def item_de_nodo(nodo, ahora, ultimo_sismo_t):
         "vulnerable": nodo.get("tipo_lugar") in VULNERABLES,
         "recurso": recurso,
         "texto": f"📡 {nodo['nombre']}: {texto}",
+    }
+
+
+def item_de_comunidad(cid, st, config):
+    """Una comunidad en Atención pide verificar en el sitio; en Alerta, evacuar."""
+    if st["nivel"] == "normal" or st.get("atendido_por"):
+        return None
+    alerta = st["nivel"] == "alerta"
+    return {
+        "fuente": "sensor",
+        "gravedad": 9 if alerta else 3,
+        "personas": config.get("personas", 0),
+        "vulnerable": False,
+        "recurso": "evacuacion" if alerta else "evaluacion",
+        "texto": f"⛰️ {config['nombre']}: {'ALERTA' if alerta else 'Atención'}. {st['motivos'][0] if st['motivos'] else ''}",
     }
 
 
@@ -101,13 +116,19 @@ def explicar(items, confianza):
     return lineas
 
 
-def calcular(estado, ahora):
+def calcular(estado, ahora, comunidades=None):
     """Ranking de zonas, de mayor a menor prioridad."""
     items_por_zona = defaultdict(list)
     for nodo in estado.nodos.values():
         item = item_de_nodo(nodo, ahora, estado.ultimo_sismo_t)
         if item:
             items_por_zona[nodo["zona"]].append(item)
+    if comunidades:
+        for cid, st in comunidades.estado.items():
+            config = comunidades.config[cid]
+            item = item_de_comunidad(cid, st, config)
+            if item:
+                items_por_zona[config["zona"]].append(item)
     for reporte in estado.reportes.values():
         item = item_de_reporte(reporte)
         if item:
@@ -150,9 +171,16 @@ def calcular(estado, ahora):
     return resultado
 
 
-def marcar_atendidos(estado, zona, tipo_recurso, recurso_id, ahora):
+def marcar_atendidos(estado, zona, tipo_recurso, recurso_id, ahora, comunidades=None):
     """Marca como atendidos los pedidos de la zona que cubre ese tipo de recurso."""
     n = 0
+    if comunidades:
+        for cid, st in comunidades.estado.items():
+            config = comunidades.config[cid]
+            item = item_de_comunidad(cid, st, config)
+            if config["zona"] == zona and item and item["recurso"] == tipo_recurso:
+                st["atendido_por"] = recurso_id
+                n += 1
     for reporte in estado.reportes.values():
         if reporte["zona"] == zona and not reporte.get("atendido_por") and RECURSO_REPORTE[reporte["tipo"]] == tipo_recurso:
             reporte["atendido_por"] = recurso_id

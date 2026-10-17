@@ -1,15 +1,40 @@
 # VIGÍA – Prototipo
 
-Celulares en desuso que vigilan estructuras, laderas y ríos, y un panel que
-ayuda a COMUPRED a decidir a quién atender primero después de un desastre.
+Celulares en desuso convertidos en estaciones de alerta temprana de
+deslizamientos para comunidades de ladera (Desafío 02 – Sensores al servicio
+de la comunidad).
 
-Tres apps web servidas por un solo servidor en Python:
+En cada comunidad hay tres celulares sensores y un celular nodo:
+
+| Celular | Dónde va | Qué hace |
+|---|---|---|
+| **A** | Ladera alta, semienterrado y anclado a una estaca | Mide la inclinación y la vibración del terreno |
+| **B** | Ladera media, igual que A | Confirma lo que mide A |
+| **R** | Suelo estable (casa comunal) | Referencia: compensa a A y B y detecta sismos |
+| **Nodo** | Edificio comunitario sobre terreno estable | Recibe a A, B y R por WiFi, decide el estado y avisa por SMS |
+
+El celular nodo decide el estado de la comunidad:
+
+- **Normal:** ningún sensor muestra movimiento sostenido.
+- **Atención:** un solo sensor se mueve, el terreno vibra sin parar o un sensor
+  no responde. Se avisa **al comité local** para que verifique en el sitio.
+- **Alerta:** A y B se mueven a la vez (coinciden). Se avisa **a los habitantes**,
+  según el protocolo con la alcaldía y SINAPRED.
+
+Si R también se mueve o vibra, es un sismo o un problema del sitio y no un
+deslizamiento: así se evitan falsas alarmas.
+
+Tres apps web servidas por el mismo servidor en Python:
 
 | Dirección | App | Para quién |
 |---|---|---|
-| `/nodo` | Nodo sensor | El celular viejo fijo en la estructura, la ladera o el río |
-| `/comunidad` | Comunidad | Vecinos y brigadistas: reportan y reciben alertas |
-| `/panel` | Panel de coordinación | COMUPRED / COE: mapa, prioridades y recursos |
+| `/nodo` | Sensor | El celular en desuso que va como A, B o R |
+| `/panel` | Panel de comunidades | Celular nodo, alcaldía o COMUPRED |
+| `/comunidad` | Comunidad | Comité local y habitantes: avisos y reportes |
+
+Como **ampliación** (diseño modular), el mismo sistema incluye detección de
+sismos con ondas P y S, nivel de ríos, lahares y priorización de recursos
+después de un desastre.
 
 ## 1. Instalar (una sola vez)
 
@@ -20,16 +45,12 @@ python -m pip install -r requirements.txt
 
 ## 2. Arrancar el servidor
 
-**Forma rápida (servidor + túnel HTTPS de una vez):**
+**En una laptop (servidor + túnel HTTPS de una vez):**
 
 ```
 cd vigia
 powershell -ExecutionPolicy Bypass -File iniciar.ps1
 ```
-
-Usa el puerto 8080 (en esta laptop el 8000 lo ocupa otro programa). Si se va
-internet, el túnel se reconecta solo y conserva la dirección mientras la
-ventana siga abierta. Si cierras la ventana, la dirección cambia.
 
 **Forma manual:**
 
@@ -40,94 +61,110 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 En la laptop abre **http://localhost:8000/panel**.
 
-## 3. Conectar los celulares (necesitan HTTPS)
+**En la nube:** el proyecto se despliega en Render con `render.yaml`
+(https://vigia-nicaragua.onrender.com).
+
+## 3. El celular nodo (Termux) – pendiente de probar en un celular real
+
+El documento del proyecto propone que el celular nodo de la comunidad decida
+el estado. El mismo servidor de VIGÍA puede correr en un Android con Termux:
+
+1. Instala **Termux** y **Termux:API** desde F-Droid.
+2. En Termux:
+   ```
+   pkg update
+   pkg install python git termux-api
+   git clone https://github.com/Jafeth04/vigia-nicaragua
+   cd vigia-nicaragua
+   pip install -r requirements.txt
+   ```
+   Si falla compilando `pydantic-core`, instala antes `pkg install rust binutils`.
+3. Prueba el permiso de SMS una vez: `termux-sms-send -n <tu número> prueba`.
+4. Activa la **zona WiFi** del celular nodo: A, B y R se conectan a ella.
+5. Evita que Android lo duerma: `termux-wake-lock`.
+6. Arranca: `python -m uvicorn server:app --host 0.0.0.0 --port 8000`.
+7. Mira la IP del nodo con `ifconfig` y abre `http://<IP>:8000/nodo` en cada
+   sensor (con el flag de Chrome de la sección 4, opción B).
+
+Con `termux-sms-send` disponible, el servidor manda los SMS de verdad: en
+Atención al comité, en Alerta al comité y a los habitantes, y en Alerta por las
+dos SIM. Sin Termux, el envío queda registrado como «simulado».
+
+## 4. Conectar los celulares (necesitan HTTPS o el flag de Chrome)
 
 Los navegadores solo entregan el acelerómetro y el GPS en páginas **HTTPS**.
 
-**Opción A – Túnel gratuito (con internet).** Recomendada para el rally.
+**Opción A – Túnel o Render (con internet).** Abre la dirección `https://`.
 
-```
-winget install --id Cloudflare.cloudflared
-cloudflared tunnel --url http://localhost:8000
-```
+**Opción B – Red local sin internet (zona WiFi del nodo o router).**
 
-Aparece una dirección como `https://algo-al-azar.trycloudflare.com`. Ábrela en
-cada celular (`/nodo` en el celular sensor, `/comunidad` en el del vecino).
-La dirección cambia cada vez que se reinicia el túnel.
+1. Anota la IP del servidor (`ipconfig` en Windows, `ifconfig` en Termux).
+2. En cada celular sensor, Chrome → `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+   → agrega `http://<IP>:8000` → *Enabled* → reiniciar Chrome.
+3. Abre `http://<IP>:8000/nodo`.
 
-**Opción B – Sin internet (misma red WiFi).**
+## 5. Configurar una comunidad
 
-1. En la laptop, `ipconfig` → anota la IPv4 (ej. `192.168.1.20`).
-2. En el celular, Chrome → `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
-   → agrega `http://192.168.1.20:8000` → *Enabled* → reiniciar Chrome.
-3. Abre `http://192.168.1.20:8000/nodo`.
+Las comunidades están en `comunidades.json`: nombre, zona, ubicación,
+personas y los teléfonos que reciben SMS:
 
-Si Windows pregunta por el firewall al arrancar el servidor, permite el acceso en redes privadas.
+- `contactos_comite`: reciben Atención y Alerta.
+- `contactos_alerta`: habitantes que reciben solo Alerta.
 
-## 4. Probar sin celulares
+Para la maqueta se usa la **«Comunidad de prueba (maqueta)»**.
 
-En el panel, abajo:
+En cada celular sensor (`/nodo`):
 
-- **Sismo costa Pacífico (M7.6)**: los nodos virtuales detectan las ondas P y S,
-  se confirma el sismo, se estima el epicentro y llegan reportes.
-  Managua recibe ~10 s de aviso.
-- **Sismo falla de Managua (M6.2)**: el contraste. Casi no hay tiempo de aviso.
-- **Lluvia intensa**: la ladera del Casita se inclina cada vez más rápido
-  (y luego vibra: posible lahar) y crecen los ríos de Matagalpa y Waspam.
-- **Reportes de prueba**: 12 reportes en Managua y alrededores.
-- **Modo demo**: con un solo nodo basta para confirmar un sismo (la maqueta).
-- **Reiniciar todo**: deja el sistema limpio antes de presentar.
+1. Elige **Sensor de ladera (A o B)** o **Referencia (R)**.
+2. Elige la comunidad y, si es sensor de ladera, la posición A o B.
+3. **Calibrar e iniciar** con el celular quieto en su posición final.
 
-## 5. Guion de la demo (3 minutos)
+## 6. Probar sin celulares
 
-1. Panel en calma. Presiona **Reiniciar todo** y activa **Modo demo**.
-2. Celular-nodo pegado a la maqueta, modo *Estructura*, zona *Masachapa*:
-   **Calibrar e iniciar** y espera 10 s sin tocarlo.
-3. Celular del vecino en `/comunidad`, zona *Managua*, toca **Activar alertas con sonido**.
-4. Golpecitos verticales a la maqueta (onda P) → sacudida lateral fuerte (onda S).
-   El vecino recibe la alerta con cuenta regresiva y el nodo se pone rojo en el panel.
-5. Inclina la maqueta y déjala así 5 s: "Inclinación permanente".
-6. El vecino pone **modo avión**, reporta "Personas atrapadas" → queda en cola →
-   quita el modo avión → llega solo.
-7. En el panel, Masachapa sube al #1 con su explicación → **Enviar 🚒 Rescate**.
-8. **Sismo costa Pacífico** para mostrar la escala: ondas P/S en el mapa y ranking automático.
+En el panel, menú **Simulación**:
 
-## 6. Dónde ajustar cosas
+- **Deslizamiento:** A empieza a moverse (Atención a los ~16 s, aviso al comité)
+  y B lo confirma (Alerta a los ~34 s, aviso a todos).
+- **Falsa alarma:** solo se mueve A (un golpe en la estaca). Se queda en Atención.
+- **Sismo:** A, B y R vibran. R lo identifica como sismo: no hay alerta de deslizamiento.
+- Ampliación: sismos en la costa y en Managua, lluvia con lahar y ríos, reportes.
+- **Reiniciar todo** deja el sistema limpio antes de presentar.
+
+## 7. Guion de la demo (3 minutos)
+
+1. Panel en calma. **Reiniciar todo**.
+2. Maqueta de ladera: bandeja con tierra húmeda en pendiente. Celulares A y B
+   en bolsas con cierre, pegados a paletas clavadas en la tierra. R sobre la
+   mesa (suelo estable). Los tres en «Comunidad de prueba» y calibrados.
+3. Celular del comité en `/comunidad`, zona *Jinotega*, con «Soy del comité»
+   marcado y **Activar alertas**.
+4. Echa agua en la parte alta: la paleta de A se inclina → **Atención** →
+   suena el aviso solo en el celular del comité.
+5. Sigue echando agua hasta que ceda la zona de B → **Alerta** → aviso a todos.
+6. Golpea solo la estaca de A en otra prueba: se queda en Atención (sin falsa alarma).
+7. Cierra con «Simulación → Deslizamiento» para mostrar el panel completo.
+
+## 8. Dónde ajustar cosas
 
 | Qué | Dónde |
 |---|---|
-| Umbrales del celular (inclinación, sacudida, STA/LTA, ladera) | `static/nodo.js` → `UMBRALES` |
-| Gravedad de cada tipo de pedido, vulnerabilidad, confianza | `prioridad.py` |
-| Velocidades de las ondas, ventana de confirmación | `sismo.py` |
-| Zonas (ciudades) y recursos disponibles | `estado.py` → `LUGARES`, `RECURSOS` |
-| Nodos virtuales y escenarios | `simulador.py` |
+| Umbrales de la comunidad (0,5°, 0,2°/min, tiempo sostenido) | `comunidades.py` |
+| Umbrales del celular sensor | `static/nodo.js` → `UMBRALES` |
+| Comunidades y teléfonos para SMS | `comunidades.json` |
+| Envío de SMS por las dos SIM | `notificador.py` |
+| Gravedad, vulnerabilidad y confianza (ampliación) | `prioridad.py` |
+| Escenarios de prueba | `simulador.py` |
 
-El estado se guarda en `estado.json` (se crea solo). Bórralo o usa
-**Reiniciar todo** para empezar de cero.
+Los umbrales se definen con la **prueba de ángulos conocidos** de la app del
+sensor: se apoya el celular en cuñas de 5°, 10° y 15° y se registra lo que mide.
 
-## 7. Cómo funciona por dentro
+## 9. Limitaciones (decirlas con honestidad)
 
-- **Nodo** (`nodo.js`): calibra la gravedad 5 s, separa el movimiento en vertical
-  y horizontal. La onda P se detecta con **STA/LTA** sobre el componente vertical
-  (promedio de 0,5 s más de 4 veces el de 10 s). La onda S es el pico horizontal
-  posterior. Segundos entre P y S × 8,4 = km al origen. La inclinación es el ángulo
-  entre la gravedad actual y la calibrada. En modo río, el ángulo del brazo con
-  flotador se convierte en nivel de agua.
-- **Servidor** (`server.py` + `sismo.py`): confirma el sismo cuando 2 nodos detectan
-  la onda P en menos de 15 s, estima el epicentro con una búsqueda en grilla sobre
-  los tiempos de llegada y envía la alerta. Cada celular calcula cuánto le falta
-  a la onda S según su distancia.
-- **Prioridad** (`prioridad.py`):
-  `Σ (gravedad × (1 + log2(1 + personas)) × vulnerabilidad) × confianza`.
-- **Comunidad** (`comunidad.js`): los reportes se guardan en el celular y se
-  reintentan cada 5 s. El servidor ignora duplicados, así que reintentar es seguro.
-
-## 8. Limitaciones (decirlas con honestidad)
-
-- Es una página web: el nodo debe quedar con la pantalla abierta (se mantiene
-  encendida sola). La versión final sería una app Android con servicio en segundo plano.
-- El acelerómetro de un celular detecta sismos moderados o fuertes, no microsismos.
-- Cerca del epicentro no hay tiempo de aviso. La alerta temprana sirve para sismos lejanos.
-- La red de celular a celular sin internet (WiFi Direct o Bluetooth) no está en el
-  prototipo: se muestra la cola sin conexión y el respaldo por SMS.
+- `SOSTENER_S` vale 10 s para poder demostrarlo; en campo serían minutos,
+  definidos con las pruebas.
+- Es una página web: el sensor debe quedar con la pantalla abierta. La versión
+  de campo sería una app Android que mide con la pantalla apagada.
+- El celular nodo con Termux está descrito pero no probado en un celular real.
+- La sensibilidad de un celular es limitada: por eso se exige movimiento
+  sostenido y coincidencia entre A y B, con R como referencia.
 - El mapa necesita internet para las imágenes de fondo (OpenStreetMap).

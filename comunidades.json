@@ -1,0 +1,52 @@
+[
+  {
+    "id": "prueba",
+    "nombre": "Comunidad de prueba (maqueta)",
+    "zona": "jinotega",
+    "lat": 13.0785,
+    "lng": -86.0140,
+    "personas": 120,
+    "contactos_comite": [],
+    "contactos_alerta": []
+  },
+  {
+    "id": "piloto-jinotega",
+    "nombre": "Comunidad piloto · Jinotega",
+    "zona": "jinotega",
+    "lat": 13.1180,
+    "lng": -85.9790,
+    "personas": 350,
+    "contactos_comite": [],
+    "contactos_alerta": []
+  },
+  {
+    "id": "piloto-matagalpa",
+    "nombre": "Comunidad piloto · Matagalpa",
+    "zona": "matagalpa",
+    "lat": 12.9520,
+    "lng": -85.8900,
+    "personas": 280,
+    "contactos_comite": [],
+    "contactos_alerta": []
+  },
+  {
+    "id": "piloto-madriz",
+    "nombre": "Comunidad piloto · Madriz",
+    "zona": "somoto",
+    "lat": 13.5030,
+    "lng": -86.5600,
+    "personas": 220,
+    "contactos_comite": [],
+    "contactos_alerta": []
+  },
+  {
+    "id": "piloto-nueva-segovia",
+    "nombre": "Comunidad piloto · Nueva Segovia",
+    "zona": "ocotal",
+    "lat": 13.6600,
+    "lng": -86.4500,
+    "personas": 260,
+    "contactos_comite": [],
+    "contactos_alerta": []
+  }
+]
