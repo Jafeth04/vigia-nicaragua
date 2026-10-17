@@ -19,35 +19,54 @@
     </div>
     <span id="estado-general" class="estado-general ok">Sin eventos</span>
     <div class="barra-der">
-      <span id="reloj" class="reloj mono">--:--:--</span>
+      <span class="reloj"><i data-icono="clock"></i><span id="reloj" class="mono">--:--:--</span></span>
       <span id="conexion" class="conexion">Conectando…</span>
-      <button id="btn-simulacion" class="btn btn-pequeno" aria-expanded="false" aria-controls="simulacion">Simulación ▾</button>
+      <button id="btn-simulacion" class="btn btn-pequeno" aria-expanded="false" aria-controls="simulacion"><i data-icono="play"></i>Simulación<i data-icono="chevron-down"></i></button>
     </div>
     <div id="simulacion" class="simulacion" hidden>
-      <p><b>Núcleo · deslizamientos.</b> Comunidad piloto de Jinotega con sus sensores A, B y R virtuales.</p>
-      <button class="btn" data-escenario="deslizamiento">⛰️ Deslizamiento: A se mueve y B lo confirma</button>
-      <button class="btn" data-escenario="falsa_alarma">🪵 Falsa alarma: solo se mueve A</button>
-      <button class="btn" data-escenario="sismo_comunidad">🌐 Sismo: la referencia R lo descarta</button>
-      <hr>
-      <p><b>Ampliación · otras amenazas.</b></p>
-      <button class="btn" data-escenario="sismo_costa">🌐 Sismo frente a la costa · M7,6</button>
-      <button class="btn" data-escenario="sismo_managua">🌐 Sismo bajo Managua · M6,2</button>
-      <button class="btn" data-escenario="lluvia">🌧️ Lluvia intensa: lahar y ríos</button>
-      <button class="btn" data-escenario="reportes">📨 12 reportes de prueba</button>
+      <div class="sim-grupo">
+        <b class="sim-tit"><i data-icono="mountain"></i>Deslizamientos</b>
+        <button class="btn" data-escenario="deslizamiento" data-amenaza="deslizamiento">A se mueve y B lo confirma<small>Atención y luego Alerta en la comunidad piloto</small></button>
+        <button class="btn" data-escenario="falsa_alarma" data-amenaza="deslizamiento">Falsa alarma: solo se mueve A<small>Se queda en Atención; el comité verifica</small></button>
+        <button class="btn" data-escenario="sismo_comunidad" data-amenaza="deslizamiento">Temblor: la referencia R lo descarta<small>A, B y R vibran a la vez: no es la ladera</small></button>
+      </div>
+      <div class="sim-grupo">
+        <b class="sim-tit"><i data-icono="activity"></i>Sismos</b>
+        <button class="btn" data-escenario="sismo_costa" data-amenaza="sismo">Frente a la costa del Pacífico · M7,6<small>Managua recibe unos 10 s de aviso</small></button>
+        <button class="btn" data-escenario="sismo_managua" data-amenaza="sismo">Bajo Managua · M6,2<small>Cerca del epicentro casi no hay aviso</small></button>
+      </div>
+      <div class="sim-grupo">
+        <b class="sim-tit"><i data-icono="waves"></i>Inundaciones</b>
+        <button class="btn" data-escenario="lluvia" data-amenaza="inundacion">Lluvia intensa<small>Crecen los ríos de Matagalpa y Waspam; se mueve la ladera del Casita</small></button>
+      </div>
+      <div class="sim-grupo">
+        <b class="sim-tit"><i data-icono="users"></i>Población</b>
+        <button class="btn" data-escenario="reportes" data-amenaza="poblacion">12 reportes de vecinos<small>Algunos llegan por SMS</small></button>
+      </div>
       <hr>
       <label class="check"><input id="modo-demo" type="checkbox"> Modo demo: 1 nodo basta para confirmar un sismo</label>
-      <hr>
-      <button id="btn-reiniciar" class="btn btn-peligro">Reiniciar todo</button>
+      <button id="btn-reiniciar" class="btn btn-peligro"><i data-icono="rotate-ccw"></i>Reiniciar todo</button>
     </div>
   </header>
 
-  <section class="kpis" aria-label="Resumen">
-    <div class="kpi" id="kpi-nodos"><span class="kpi-et">Nodos en línea</span><b id="k-nodos">0</b><small id="k-nodos-det">Sin nodos conectados</small></div>
-    <div class="kpi" id="kpi-alertas"><span class="kpi-et">Comunidades en alerta</span><b id="k-alertas">0</b><small id="k-alertas-det">—</small></div>
-    <div class="kpi" id="kpi-pedidos"><span class="kpi-et">Pedidos sin atender</span><b id="k-pedidos">0</b><small id="k-pedidos-det">—</small></div>
-    <div class="kpi" id="kpi-personas"><span class="kpi-et">Personas por atender</span><b id="k-personas">0</b><small>según los reportes pendientes</small></div>
-    <div class="kpi" id="kpi-recursos"><span class="kpi-et">Recursos libres</span><b id="k-recursos">0</b><small id="k-recursos-det">—</small></div>
-  </section>
+  <nav class="amenazas" role="tablist" aria-label="Desastres naturales">
+    <button class="amenaza" role="tab" id="tab-deslizamiento" data-amenaza="deslizamiento" aria-controls="lateral" aria-selected="true">
+      <span class="amenaza-ico"><i data-icono="mountain"></i></span>
+      <span class="amenaza-txt"><span class="amenaza-nom">Deslizamientos</span><b class="amenaza-nivel">Normal</b><small class="amenaza-res">—</small></span>
+    </button>
+    <button class="amenaza" role="tab" id="tab-sismo" data-amenaza="sismo" aria-controls="lateral" aria-selected="false">
+      <span class="amenaza-ico"><i data-icono="activity"></i></span>
+      <span class="amenaza-txt"><span class="amenaza-nom">Sismos</span><b class="amenaza-nivel">Normal</b><small class="amenaza-res">—</small></span>
+    </button>
+    <button class="amenaza" role="tab" id="tab-inundacion" data-amenaza="inundacion" aria-controls="lateral" aria-selected="false">
+      <span class="amenaza-ico"><i data-icono="waves"></i></span>
+      <span class="amenaza-txt"><span class="amenaza-nom">Inundaciones</span><b class="amenaza-nivel">Normal</b><small class="amenaza-res">—</small></span>
+    </button>
+    <button class="amenaza" role="tab" id="tab-poblacion" data-amenaza="poblacion" aria-controls="lateral" aria-selected="false">
+      <span class="amenaza-ico"><i data-icono="users"></i></span>
+      <span class="amenaza-txt"><span class="amenaza-nom">Población y recursos</span><b class="amenaza-nivel">Sin pedidos</b><small class="amenaza-res">—</small></span>
+    </button>
+  </nav>
 
   <div id="banner-sismo" class="sismo" hidden></div>
 
@@ -55,39 +74,65 @@
     <div class="mapa-cont">
       <div id="mapa" class="mapa"></div>
       <div class="leyenda" aria-label="Leyenda del mapa">
-        <b>Nodos</b>
-        <span><i class="punto" style="background:var(--ok)"></i>Normal</span>
-        <span><i class="punto" style="background:var(--warn)"></i>Atención</span>
-        <span><i class="punto" style="background:var(--crit)"></i>Alerta</span>
-        <span><i class="punto" style="background:var(--off)"></i>Sin respuesta</span>
-        <span><i class="punto real" style="background:var(--raised)"></i>Celular real (borde celeste)</span>
-        <b>Sismo</b>
-        <span><i class="linea-p"></i>Onda P (rápida, aviso)</span>
-        <span><i class="linea-s"></i>Onda S (fuerte, daño)</span>
+        <label class="check ver-todo"><input id="ver-todo" type="checkbox"> Mostrar todos los desastres</label>
+        <div id="leyenda-contenido"></div>
       </div>
     </div>
 
-    <aside class="lateral">
-      <section class="bloque">
-        <div class="bloque-cab"><h2 class="titulo-seccion">Comunidades de ladera</h2><span class="nota">Decide el celular nodo con A, B y R</span></div>
-        <div id="comunidades" class="comunidades"></div>
+    <aside id="lateral" class="lateral" role="tabpanel" aria-live="polite">
+      <!-- Deslizamientos -->
+      <section class="vista" data-vista="deslizamiento">
+        <div class="vista-cab">
+          <h2><i data-icono="mountain"></i>Deslizamientos</h2>
+          <p>En cada comunidad, el celular nodo compara A (ladera alta), B (ladera media) y R (suelo estable). Solo da Alerta si A y B se mueven a la vez.</p>
+        </div>
+        <div class="bloque"><h3 class="titulo-seccion">Comunidades de ladera</h3><div id="comunidades" class="comunidades"></div></div>
+        <div class="bloque" id="bloque-laderas" hidden><h3 class="titulo-seccion">Laderas sin comunidad</h3><ul id="laderas" class="filas"></ul></div>
+        <div class="bloque" id="bloque-rep-deslizamiento" hidden><h3 class="titulo-seccion">Reportes de vecinos</h3><ul id="rep-deslizamiento" class="filas"></ul></div>
+        <div class="bloque"><h3 class="titulo-seccion">Actividad</h3><ul id="act-deslizamiento" class="bitacora"></ul></div>
       </section>
-      <section class="bloque">
-        <div class="bloque-cab"><h2 class="titulo-seccion">Prioridades</h2><span class="nota">El sistema recomienda · tú decides</span></div>
-        <ol id="ranking" class="ranking"></ol>
+
+      <!-- Sismos -->
+      <section class="vista" data-vista="sismo" hidden>
+        <div class="vista-cab">
+          <h2><i data-icono="activity"></i>Sismos</h2>
+          <p>Celulares fijos en escuelas, hospitales y mercados detectan la onda P. Con dos nodos se confirma el sismo y se avisa antes de que llegue la onda S.</p>
+        </div>
+        <div class="bloque" id="bloque-sismo-activo" hidden><div id="sismo-activo"></div></div>
+        <div class="bloque"><h3 class="titulo-seccion">Estructuras vigiladas</h3><ul id="estructuras" class="filas"></ul></div>
+        <div class="bloque" id="bloque-rep-sismo" hidden><h3 class="titulo-seccion">Reportes de edificios dañados</h3><ul id="rep-sismo" class="filas"></ul></div>
+        <div class="bloque"><h3 class="titulo-seccion">Actividad</h3><ul id="act-sismo" class="bitacora"></ul></div>
       </section>
-      <section class="bloque">
-        <div class="bloque-cab"><h2 class="titulo-seccion">Recursos</h2><span class="nota" id="recursos-nota"></span></div>
-        <div id="recursos" class="recursos"></div>
+
+      <!-- Inundaciones -->
+      <section class="vista" data-vista="inundacion" hidden>
+        <div class="vista-cab">
+          <h2><i data-icono="waves"></i>Inundaciones</h2>
+          <p>Un celular sujeto a un brazo con flotador mide el nivel del río: el ángulo del brazo se convierte en centímetros.</p>
+        </div>
+        <div class="bloque"><h3 class="titulo-seccion">Ríos vigilados</h3><ul id="rios" class="filas"></ul></div>
+        <div class="bloque" id="bloque-rep-inundacion" hidden><h3 class="titulo-seccion">Reportes de inundación</h3><ul id="rep-inundacion" class="filas"></ul></div>
+        <div class="bloque"><h3 class="titulo-seccion">Actividad</h3><ul id="act-inundacion" class="bitacora"></ul></div>
       </section>
-      <details class="bloque bitacora-cont" open>
-        <summary class="bloque-cab"><h2 class="titulo-seccion">Bitácora</h2><span class="nota">Lo último arriba</span></summary>
-        <ul id="bitacora" class="bitacora"></ul>
-      </details>
+
+      <!-- Población y recursos -->
+      <section class="vista" data-vista="poblacion" hidden>
+        <div class="vista-cab">
+          <h2><i data-icono="users"></i>Población y recursos</h2>
+          <p>Zonas ordenadas por urgencia según los reportes de los vecinos y los sensores. El sistema recomienda; tú decides a dónde enviar cada unidad.</p>
+        </div>
+        <div class="bloque"><h3 class="titulo-seccion">A quién atender primero</h3><ol id="ranking" class="ranking"></ol></div>
+        <div class="bloque"><div class="bloque-cab"><h3 class="titulo-seccion">Unidades</h3><span class="nota">Verde: libre · Ámbar: en camino</span></div><div id="recursos" class="recursos"></div></div>
+        <details class="bloque">
+          <summary class="bloque-cab"><h3 class="titulo-seccion">Bitácora completa</h3><span class="nota">Lo último arriba</span></summary>
+          <ul id="bitacora" class="bitacora"></ul>
+        </details>
+      </section>
     </aside>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/iconos.js"></script>
   <script src="/static/comun.js"></script>
   <script src="/static/panel.js"></script>
 </body>

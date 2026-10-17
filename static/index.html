@@ -21,9 +21,9 @@
     </header>
 
     <div class="apps">
-      <a class="app-tarjeta" href="/nodo"><span class="etq ok">Celular en desuso</span><b>📡 Sensor A, B o R</b><span>Semienterrado en la ladera o en suelo estable, con energía solar.</span></a>
-      <a class="app-tarjeta" href="/panel"><span class="etq info">Celular nodo · alcaldía</span><b>🗺️ Panel de comunidades</b><span>Estado de cada comunidad, motivos, avisos enviados y prioridades.</span></a>
-      <a class="app-tarjeta" href="/comunidad"><span class="etq warn">Comité y habitantes</span><b>🆘 Comunidad</b><span>Avisos de Atención para el comité y de Alerta para todos; reportes aun sin señal.</span></a>
+      <a class="app-tarjeta" href="/nodo"><span class="etq ok">Celular en desuso</span><span class="app-ico"><i data-icono="smartphone"></i></span><b>Sensor A, B o R</b><span>Semienterrado en la ladera o en suelo estable, con energía solar.</span></a>
+      <a class="app-tarjeta" href="/panel"><span class="etq info">Celular nodo · alcaldía</span><span class="app-ico"><i data-icono="map"></i></span><b>Centro de coordinación</b><span>Deslizamientos, sismos e inundaciones por separado; a quién atender primero y con qué unidades.</span></a>
+      <a class="app-tarjeta" href="/comunidad"><span class="etq warn">Comité y habitantes</span><span class="app-ico"><i data-icono="users"></i></span><b>Comunidad</b><span>Avisos de Atención para el comité y de Alerta para todos; reportes aun sin señal.</span></a>
     </div>
 
     <section class="caja">
@@ -32,6 +32,7 @@
       <code id="direccion"></code>
     </section>
   </main>
+  <script src="/static/iconos.js"></script>
   <script>
     document.getElementById('direccion').textContent = location.origin;
   </script>

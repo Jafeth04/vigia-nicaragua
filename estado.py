@@ -39,31 +39,35 @@ LUGARES = [
 ]
 LUGARES_POR_ID = {l["id"]: l for l in LUGARES}
 
-# tipo: (emoji, nombre, unidades disponibles)
+# tipo: (ícono, nombre, unidades disponibles). Los íconos son de Lucide (static/iconos.js).
 RECURSOS = {
-    "rescate": ("🚒", "Rescate", 3),
-    "ambulancia": ("🚑", "Ambulancia", 2),
-    "maquinaria": ("🚜", "Maquinaria", 1),
-    "evacuacion": ("🚌", "Evacuación", 2),
-    "evaluacion": ("🔎", "Inspección en sitio", 2),
-    "viveres": ("📦", "Víveres", 3),
+    "rescate": ("life-buoy", "Rescate", 3),
+    "ambulancia": ("ambulance", "Ambulancia", 2),
+    "maquinaria": ("tractor", "Maquinaria", 1),
+    "evacuacion": ("bus", "Evacuación", 2),
+    "evaluacion": ("search", "Inspección en sitio", 2),
+    "viveres": ("package", "Víveres", 3),
 }
 
 TIPOS_REPORTE = {
-    "atrapados": ("🆘", "Personas atrapadas"),
-    "heridos": ("🩹", "Heridos"),
-    "edificio": ("🏚️", "Edificio dañado"),
-    "inundacion": ("🌊", "Inundación"),
-    "deslizamiento": ("⛰️", "Deslizamiento"),
-    "ruta": ("🚧", "Ruta bloqueada"),
-    "necesidades": ("💧", "Agua / alimentos / refugio"),
+    "atrapados": ("siren", "Personas atrapadas"),
+    "heridos": ("heart-pulse", "Heridos"),
+    "edificio": ("building-2", "Edificio dañado"),
+    "inundacion": ("waves", "Inundación"),
+    "deslizamiento": ("mountain", "Deslizamiento"),
+    "ruta": ("construction", "Ruta bloqueada"),
+    "necesidades": ("droplets", "Agua / alimentos / refugio"),
 }
 
+# Cada modo de sensor y cada tipo de reporte pertenece a un desastre natural: así el panel los separa.
+AMENAZA_MODO = {"ladera": "deslizamiento", "referencia": "deslizamiento", "estructura": "sismo", "rio": "inundacion"}
+AMENAZA_REPORTE = {"deslizamiento": "deslizamiento", "edificio": "sismo", "inundacion": "inundacion"}  # el resto: población
+
 MODOS = {
-    "ladera": ("⛰️", "Sensor de ladera"),
-    "referencia": ("📍", "Referencia"),
-    "estructura": ("🏫", "Estructura"),
-    "rio": ("🌊", "Río"),
+    "ladera": ("mountain", "Sensor de ladera"),
+    "referencia": ("map-pin", "Referencia"),
+    "estructura": ("building", "Estructura"),
+    "rio": ("waves", "Río"),
 }
 ROLES = {"A": "Sensor A · ladera alta", "B": "Sensor B · ladera media", "R": "Referencia R · suelo estable"}
 TIPOS_LUGAR = {"casa", "escuela", "hospital", "asilo", "edificio", "puente", "ladera", "rio", "otro"}
@@ -107,9 +111,9 @@ def catalogo():
     """Listas que comparten el servidor y las apps web."""
     return {
         "lugares": LUGARES,
-        "recursos": {k: {"emoji": e, "nombre": n, "total": t} for k, (e, n, t) in RECURSOS.items()},
-        "tipos_reporte": {k: {"emoji": e, "nombre": n} for k, (e, n) in TIPOS_REPORTE.items()},
-        "modos": {k: {"emoji": e, "nombre": n} for k, (e, n) in MODOS.items()},
+        "recursos": {k: {"icono": i, "nombre": n, "total": t} for k, (i, n, t) in RECURSOS.items()},
+        "tipos_reporte": {k: {"icono": i, "nombre": n, "amenaza": AMENAZA_REPORTE.get(k)} for k, (i, n) in TIPOS_REPORTE.items()},
+        "modos": {k: {"icono": i, "nombre": n, "amenaza": AMENAZA_MODO[k]} for k, (i, n) in MODOS.items()},
         "roles": ROLES,
         "comunidades": [{"id": c["id"], "nombre": c["nombre"], "zona": c["zona"]} for c in COMUNIDADES],
     }
@@ -172,8 +176,9 @@ class Estado:
         self.ultimo_sismo_t = 0
         self.pendiente_guardar = True
 
-    def registrar(self, texto, nivel="info"):
-        self.bitacora.append({"t": ahora_ms(), "texto": texto, "nivel": nivel})
+    def registrar(self, texto, nivel="info", icono=None, amenaza=None):
+        """amenaza: deslizamiento, sismo o inundacion (None = general). El panel separa la bitácora con ella."""
+        self.bitacora.append({"t": ahora_ms(), "texto": texto, "nivel": nivel, "icono": icono, "amenaza": amenaza})
         del self.bitacora[:-200]
 
     def registrar_nodo(self, datos):

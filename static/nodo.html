@@ -29,17 +29,17 @@
         <h2 class="titulo-seccion">¿Qué papel tiene este celular?</h2>
         <div class="modos" role="radiogroup">
           <label class="modo"><input type="radio" name="modo" value="ladera">
-            <span class="ico" aria-hidden="true">⛰️</span><b>Sensor de ladera (A o B)</b><small>Semienterrado en la ladera y anclado a una estaca. Mide cómo se inclina el terreno</small></label>
+            <span class="ico-caja" aria-hidden="true"><i data-icono="mountain"></i></span><b>Sensor de ladera (A o B)</b><small>Semienterrado en la ladera y anclado a una estaca. Mide cómo se inclina el terreno</small></label>
           <label class="modo"><input type="radio" name="modo" value="referencia">
-            <span class="ico" aria-hidden="true">📍</span><b>Referencia (R)</b><small>En suelo estable. Compensa a A y B y detecta sismos</small></label>
+            <span class="ico-caja" aria-hidden="true"><i data-icono="map-pin"></i></span><b>Referencia (R)</b><small>En suelo estable. Compensa a A y B y detecta sismos</small></label>
         </div>
         <details class="ampliacion">
           <summary>Ampliación: otras amenazas</summary>
           <div class="modos">
             <label class="modo"><input type="radio" name="modo" value="estructura">
-              <span class="ico" aria-hidden="true">🏫</span><b>Estructura</b><small>Sismos e inclinación de columnas y paredes</small></label>
+              <span class="ico-caja" aria-hidden="true"><i data-icono="building"></i></span><b>Estructura</b><small>Sismos e inclinación de columnas y paredes</small></label>
             <label class="modo"><input type="radio" name="modo" value="rio">
-              <span class="ico" aria-hidden="true">🌊</span><b>Río</b><small>Nivel del agua con un brazo y flotador</small></label>
+              <span class="ico-caja" aria-hidden="true"><i data-icono="waves"></i></span><b>Río</b><small>Nivel del agua con un brazo y flotador</small></label>
           </div>
         </details>
       </div>
@@ -85,7 +85,7 @@
           <select id="cfg-lugar"></select>
         </label>
         <div class="fila">
-          <button id="btn-gps" type="button" class="btn btn-pequeno">📍 Usar GPS</button>
+          <button id="btn-gps" type="button" class="btn btn-pequeno"><i data-icono="locate-fixed"></i>Usar GPS</button>
           <small id="txt-ubicacion" class="ayuda"></small>
         </div>
       </div>
@@ -152,7 +152,7 @@
       </div>
 
       <div class="acciones-nodo">
-        <button id="btn-negro" class="btn btn-primario">🌑 Pantalla negra</button>
+        <button id="btn-negro" class="btn btn-primario"><i data-icono="moon"></i>Pantalla negra</button>
         <button id="btn-restablecer" class="btn">Restablecer</button>
         <button id="btn-recalibrar" class="btn">Recalibrar</button>
         <button id="btn-config" class="btn">Configurar</button>
@@ -167,6 +167,7 @@
     <small>Sigue midiendo · toca para volver</small>
   </div>
 
+  <script src="/static/iconos.js"></script>
   <script src="/static/comun.js"></script>
   <script src="/static/nodo.js"></script>
 </body>

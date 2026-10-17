@@ -29,7 +29,7 @@ Tres apps web servidas por el mismo servidor en Python:
 | Dirección | App | Para quién |
 |---|---|---|
 | `/nodo` | Sensor | El celular en desuso que va como A, B o R |
-| `/panel` | Panel de comunidades | Celular nodo, alcaldía o COMUPRED |
+| `/panel` | Centro de coordinación | Celular nodo, alcaldía o COMUPRED |
 | `/comunidad` | Comunidad | Comité local y habitantes: avisos y reportes |
 
 Como **ampliación** (diseño modular), el mismo sistema incluye detección de
@@ -128,7 +128,12 @@ En cada celular sensor (`/nodo`):
 
 ## 6. Probar sin celulares
 
-En el panel, menú **Simulación**:
+El panel está separado por desastre natural. Las cuatro tarjetas de arriba
+(**Deslizamientos**, **Sismos**, **Inundaciones** y **Población y recursos**) muestran
+el estado de cada uno; al tocar una, el mapa y la columna derecha muestran solo
+lo de ese desastre. Si uno pasa a Alerta, el panel lo abre solo.
+
+En el panel, menú **Simulación** (también agrupado por desastre):
 
 - **Deslizamiento:** A empieza a moverse (Atención a los ~16 s, aviso al comité)
   y B lo confirma (Alerta a los ~34 s, aviso a todos).
@@ -161,6 +166,8 @@ En el panel, menú **Simulación**:
 | Envío de SMS por las dos SIM | `notificador.py` |
 | Gravedad, vulnerabilidad y confianza (ampliación) | `prioridad.py` |
 | Escenarios de prueba | `simulador.py` |
+| A qué desastre pertenece cada sensor y reporte | `estado.py` → `AMENAZA_MODO`, `AMENAZA_REPORTE` |
+| Íconos (Lucide, sin internet) | `static/iconos.js` |
 
 Los umbrales se definen con la **prueba de ángulos conocidos** de la app del
 sensor: se apoya el celular en cuñas de 5°, 10° y 15° y se registra lo que mide.

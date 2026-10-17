@@ -115,7 +115,7 @@ function detectarSismo(t, magnitud) {
     if (listo && razon > U.disparo && sl.staV > U.minimo) {
       evento = { tLocal: t, pga: magnitud, sDetectada: false, ultimoFuerte: t };
       conexion.enviar({ tipo: 'onda_p', id: cfg.id, t: VIGIA.ahora() });
-      anotar('⚡ Posible onda P detectada');
+      anotar('Posible onda P detectada');
     }
     return;
   }
@@ -127,7 +127,7 @@ function detectarSismo(t, magnitud) {
     const sp = t - evento.tLocal;
     const distancia = sp * KM_POR_SEG_SP;
     conexion.enviar({ tipo: 'onda_s', id: cfg.id, t: VIGIA.ahora(), sp, distancia_km: distancia });
-    anotar(`🌊 Onda S ${sp.toFixed(1)} s después → origen a ~${distancia.toFixed(0)} km`);
+    anotar(`Onda S ${sp.toFixed(1)} s después → origen a ~${distancia.toFixed(0)} km`);
   }
 
   if (t - evento.ultimoFuerte > 8) {
@@ -289,7 +289,7 @@ async function calibrar() {
     calibrando = null;
     alarma = { nivel: 'verde', motivo: 'Sin datos del acelerómetro' };
     pintar();
-    anotar('❌ No llegan datos del acelerómetro. ¿HTTPS? ¿El celular tiene sensor?');
+    anotar('No llegan datos del acelerómetro. ¿HTTPS? ¿El celular tiene sensor?');
     return;
   }
   g0 = escalar(calibrando.suma, 1 / calibrando.n);
@@ -312,7 +312,7 @@ function restablecer(razon) {
   pgaMax = 0;
   sostenido.amarillo = sostenido.rojo = 0;
   segundosVibrando = 0;
-  anotar(`🟢 Alarma restablecida (${razon})`);
+  anotar(`Alarma restablecida (${razon})`);
   pintar();
 }
 
@@ -390,8 +390,8 @@ const ETIQUETAS = {
   hz: ['Lecturas por segundo', ''],
 };
 const NOMBRE_MODO = {
-  ladera: '⛰️ Sensor de ladera', referencia: '📍 Referencia R · suelo estable',
-  estructura: '🏫 Estructura · sismo e inclinación', rio: '🌊 Río · nivel del agua',
+  ladera: 'Sensor de ladera', referencia: 'Referencia R · suelo estable',
+  estructura: 'Estructura · sismo e inclinación', rio: 'Río · nivel del agua',
 };
 const NOMBRE_NIVEL = { verde: 'NORMAL', amarillo: 'ATENCIÓN', rojo: 'ALERTA' };
 const NOMBRE_COMUNIDAD = { normal: 'NORMAL', atencion: 'ATENCIÓN', alerta: 'ALERTA' };
@@ -497,7 +497,7 @@ const modoElegido = () => (document.querySelector('input[name="modo"]:checked') 
 function alertaEnPagina(texto) {
   const aviso = $('aviso-seguro');
   aviso.hidden = false;
-  aviso.textContent = '⚠️ ' + texto;
+  aviso.textContent = texto;
 }
 
 function mostrarMonitor() {
@@ -574,7 +574,7 @@ function registrarAngulo() {
   pruebas.unshift({ real, medido, error: medido - real });
   VIGIA.guardar(CLAVE_ANGULOS, pruebas.slice(0, 12));
   conexion.enviar({ tipo: 'calibracion', id: cfg.id, real, medido });
-  anotar(`📐 Ángulo real ${real.toFixed(1)}°, medido ${medido.toFixed(2)}°`);
+  anotar(`Ángulo real ${real.toFixed(1)}°, medido ${medido.toFixed(2)}°`);
   $('angulo-real').value = '';
   pintarAngulos();
 }

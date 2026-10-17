@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 import notificador
 import prioridad
 from comunidades import NIVELES, NOMBRE_NIVEL, Comunidades
-from estado import (LUGARES_POR_ID, RECURSOS, ROLES, TIPOS_LUGAR, TIPOS_REPORTE, Estado, ahora_ms, catalogo,
+from estado import (AMENAZA_MODO, AMENAZA_REPORTE, LUGARES_POR_ID, RECURSOS, ROLES, TIPOS_LUGAR, TIPOS_REPORTE, Estado, ahora_ms, catalogo,
                     estado_efectivo, interpretar_sms, lugar_mas_cercano)
 from simulador import Simulador
 from sismo import VP, VS, Sismos
@@ -179,15 +179,15 @@ async def revisar_comunidades():
             texto = f"VIGIA FIN de la {'alerta' if antes == 'alerta' else 'atencion'} en {nombre}: vuelve a Normal.{regreso}"
             publico = protocolo_aviso(antes)
             destino = "comité y habitantes" if publico == "todos" else "comité local"
-        icono = {"alerta": "🔴", "atencion": "🟡", "normal": "🟢"}[nivel]
-        E.registrar(f"{icono} {nombre}: {NOMBRE_NIVEL[nivel].upper()}. {motivo or 'Sin movimiento en la ladera'}",
-                    {"alerta": "rojo", "atencion": "amarillo", "normal": "info"}[nivel])
+        E.registrar(f"{nombre}: {NOMBRE_NIVEL[nivel].upper()}. {motivo or 'Sin movimiento en la ladera'}",
+                    {"alerta": "rojo", "atencion": "amarillo", "normal": "info"}[nivel],
+                    "circle-check" if nivel == "normal" else "triangle-alert", "deslizamiento")
         resultado = await avisar(zona=config["zona"], nivel=nivel, publico=publico, texto=texto, comunidad_id=cid,
                                  numeros=contactos(comunidad_id=cid, publico=publico),
                                  ambas_sim=nivel == "alerta" or antes == "alerta")
         C.estado[cid]["avisos"].append({"t": ahora, "nivel": nivel, "destino": destino, "sms": resultado})
         del C.estado[cid]["avisos"][:-10]
-        E.registrar(f"📨 Aviso al {destino} de {nombre}: app enviada; SMS {resultado}")
+        E.registrar(f"Aviso al {destino} de {nombre}: app enviada; SMS {resultado}", icono="send", amenaza="deslizamiento")
     if cambios:
         await enviar_a(comunidad, {"tipo": "estado_comunidades", "lista": C.resumen()})
 
@@ -220,7 +220,7 @@ async def procesar_mensaje_nodo(msg):
         if nuevo:
             donde = (f"{ROLES[nodo['rol']]} de {C.config[nodo['comunidad']]['nombre']}" if nodo.get("comunidad")
                      else LUGARES_POR_ID[nodo["zona"]]["nombre"])
-            E.registrar(f"📡 Nodo conectado: {nodo['nombre']} ({donde})")
+            E.registrar(f"Nodo conectado: {nodo['nombre']} ({donde})", icono="radio-tower", amenaza=AMENAZA_MODO[nodo["modo"]])
         if nodo.get("comunidad"):
             await avisar_sensores_de(nodo["comunidad"])
         marcar_cambio()
@@ -242,7 +242,8 @@ async def procesar_mensaje_nodo(msg):
     elif tipo == "onda_s":
         await registrar_onda_s(nodo, msg)
     elif tipo == "fin_sismo":
-        E.registrar(f"{nodo['nombre']}: terminó el movimiento (pico {float(msg.get('pga') or 0):.2f} m/s²)")
+        E.registrar(f"{nodo['nombre']}: terminó el movimiento (pico {float(msg.get('pga') or 0):.2f} m/s²)",
+                    icono="activity", amenaza="sismo")
     marcar_cambio()
 
 
@@ -260,11 +261,11 @@ async def actualizar_estado_nodo(nodo, msg):
         return
     if nuevo == "verde":
         nodo["atendido_por"] = None
-        E.registrar(f"🟢 {nodo['nombre']} volvió a la normalidad")
+        E.registrar(f"{nodo['nombre']} volvió a la normalidad", icono="circle-check", amenaza=AMENAZA_MODO[nodo["modo"]])
     else:
         if nuevo == "rojo":
             nodo["atendido_por"] = None  # empeoró: lo asignado antes ya no alcanza, vuelve al ranking
-        E.registrar(f"{'🔴' if nuevo == 'rojo' else '🟡'} {nodo['nombre']}: {nodo['motivo']}", nuevo)
+        E.registrar(f"{nodo['nombre']}: {nodo['motivo']}", nuevo, "triangle-alert", AMENAZA_MODO[nodo["modo"]])
     if nodo.get("comunidad"):
         return  # en una comunidad decide el celular nodo con A, B y R, no un sensor solo
     await avisar_nodo_suelto(nodo, previo, nuevo)
@@ -296,7 +297,8 @@ async def avisar_nodo_suelto(nodo, previo, nuevo):
         return
     resultado = await avisar(zona=nodo["zona"], nivel=nivel, publico=publico, texto=texto,
                              numeros=contactos(zona=nodo["zona"], publico=publico), ambas_sim=nivel == "alerta")
-    E.registrar(f"📨 Aviso de {nombre} ({'todos' if publico == 'todos' else 'comité'}): SMS {resultado}")
+    E.registrar(f"Aviso de {nombre} ({'todos' if publico == 'todos' else 'comité'}): SMS {resultado}",
+                icono="send", amenaza=AMENAZA_MODO[nodo["modo"]])
 
 
 def registrar_calibracion(nodo, msg):
@@ -309,16 +311,17 @@ def registrar_calibracion(nodo, msg):
     nodo["calibraciones"] = (nodo.get("calibraciones", []) + [
         {"t": ahora_ms(), "real": round(real, 2), "medido": round(medido, 2), "error": round(medido - real, 2)}
     ])[-20:]
-    E.registrar(f"📐 {nodo['nombre']}: prueba de ángulo real {real:.1f}°, medido {medido:.1f}° (error {medido - real:+.1f}°)")
+    E.registrar(f"{nodo['nombre']}: prueba de ángulo real {real:.1f}°, medido {medido:.1f}° (error {medido - real:+.1f}°)",
+               icono="ruler", amenaza=AMENAZA_MODO[nodo["modo"]])
 
 
 async def registrar_onda_p(nodo, msg):
     ahora = ahora_ms()
     t = int(msg.get("t") or ahora)
     if ahora - t > 20_000:
-        E.registrar(f"{nodo['nombre']}: detección de onda P llegó tarde, se ignora")
+        E.registrar(f"{nodo['nombre']}: detección de onda P llegó tarde, se ignora", icono="clock", amenaza="sismo")
         return
-    E.registrar(f"⚡ {nodo['nombre']}: onda P detectada")
+    E.registrar(f"{nodo['nombre']}: onda P detectada", icono="zap", amenaza="sismo")
     resultado = S.onda_p(nodo, t, ahora, 1 if E.modo_demo else 2)
     if not resultado:
         return
@@ -326,18 +329,19 @@ async def registrar_onda_p(nodo, msg):
     await enviar_a(comunidad, alerta_sismo(evento))
     if clase == "nuevo":
         E.ultimo_sismo_t = evento["t0"]
-        E.registrar(f"🌐 SISMO CONFIRMADO por {evento['n_nodos']} nodo(s). Alerta enviada a la comunidad.", "rojo")
+        E.registrar(f"SISMO CONFIRMADO por {evento['n_nodos']} nodo(s). Alerta enviada a la comunidad.", "rojo",
+                    "earth", "sismo")
         # El SMS llega en segundos, a menudo después de la sacudida: sirve para que todos los comités sepan y revisen.
         cerca = lugar_mas_cercano(evento["lat"], evento["lng"])["nombre"]
         resultado = await notificador.enviar(
             contactos(publico="comite"), f"VIGIA SISMO detectado cerca de {cerca}. Protégete y luego revisa tu comunidad.",
             ambas_sim=True)
-        E.registrar(f"📨 Aviso de sismo a los comités: SMS {resultado}")
+        E.registrar(f"Aviso de sismo a los comités: SMS {resultado}", icono="send", amenaza="sismo")
 
 
 async def registrar_onda_s(nodo, msg):
     distancia = float(msg.get("distancia_km") or 0)
-    E.registrar(f"🌊 {nodo['nombre']}: onda S, origen a ~{distancia:.0f} km")
+    E.registrar(f"{nodo['nombre']}: onda S, origen a ~{distancia:.0f} km", icono="activity", amenaza="sismo")
     evento = S.onda_s(nodo["id"], distancia, ahora_ms())
     if evento:
         await enviar_a(comunidad, alerta_sismo(evento))
@@ -379,9 +383,9 @@ async def crear_reporte(datos, origen="app"):
         "atendido_por": None,
     }
     E.reportes[rid] = reporte
-    emoji, nombre = TIPOS_REPORTE[tipo]
-    E.registrar(f"{emoji} {nombre} en {LUGARES_POR_ID[reporte['zona']]['nombre']} "
-                f"({reporte['personas']} pers., vía {origen})")
+    icono, nombre = TIPOS_REPORTE[tipo]
+    E.registrar(f"{nombre} en {LUGARES_POR_ID[reporte['zona']]['nombre']} "
+                f"({reporte['personas']} pers., vía {origen})", icono=icono, amenaza=AMENAZA_REPORTE.get(tipo))
     marcar_cambio()
     return reporte
 
@@ -476,7 +480,8 @@ async def api_restablecer_nodo(nid: str):
     if not nodo:
         raise HTTPException(404, "Nodo no encontrado")
     nodo.update(estado="verde", motivo="", atendido_por=None)
-    E.registrar(f"🟢 {nodo['nombre']}: alarma restablecida desde el panel")
+    E.registrar(f"{nodo['nombre']}: alarma restablecida desde el panel", icono="rotate-ccw",
+                amenaza=AMENAZA_MODO[nodo["modo"]])
     await enviar_a_nodo(nid, {"tipo": "restablecer"})
     marcar_cambio()
     return {"ok": True}
@@ -493,9 +498,9 @@ async def api_asignar(datos: dict):
     ahora = ahora_ms()
     recurso.update(zona=zona, desde=ahora)
     cubiertos = prioridad.marcar_atendidos(E, zona, tipo, recurso["id"], ahora, C)
-    emoji, nombre, _ = RECURSOS[tipo]
-    E.registrar(f"{emoji} {nombre} ({recurso['id']}) asignado a {LUGARES_POR_ID[zona]['nombre']}: "
-                f"cubre {cubiertos} pedido(s)")
+    icono, nombre, _ = RECURSOS[tipo]
+    E.registrar(f"{nombre} ({recurso['id']}) asignado a {LUGARES_POR_ID[zona]['nombre']}: "
+                f"cubre {cubiertos} pedido(s)", icono=icono)
     marcar_cambio()
     return recurso
 
@@ -505,8 +510,8 @@ async def api_liberar(datos: dict):
     recurso = next((r for r in E.recursos if r["id"] == datos.get("recurso_id")), None)
     if not recurso or not recurso["zona"]:
         raise HTTPException(404, "Recurso no asignado")
-    E.registrar(f"{RECURSOS[recurso['tipo']][0]} {recurso['id']} quedó libre "
-                f"(volvió de {LUGARES_POR_ID[recurso['zona']]['nombre']})")
+    E.registrar(f"{recurso['id']} quedó libre (volvió de {LUGARES_POR_ID[recurso['zona']]['nombre']})",
+                icono=RECURSOS[recurso['tipo']][0])
     recurso.update(zona=None, desde=None)
     marcar_cambio()
     return recurso
@@ -541,7 +546,7 @@ async def api_decision_comunidad(cid: str, datos: dict):
         texto = C.decidir(cid, datos.get("decision"), ahora_ms())
     except ValueError as e:
         raise HTTPException(400, str(e))
-    E.registrar(f"🧑‍🤝‍🧑 {C.config[cid]['nombre']}: {texto}", "amarillo")
+    E.registrar(f"Comité de {C.config[cid]['nombre']}: {texto}", "amarillo", "users", "deslizamiento")
     await revisar_comunidades()
     marcar_cambio()
     return {"ok": True, "nivel": C.estado[cid]["nivel"]}
@@ -565,7 +570,7 @@ ESCENARIOS = {
 async def api_simular(escenario: str):
     if escenario not in ESCENARIOS:
         raise HTTPException(404, "Escenario desconocido")
-    E.registrar(f"▶️ Simulación iniciada: {escenario}")
+    E.registrar(f"Simulación iniciada: {escenario}", icono="play")
     await ESCENARIOS[escenario]()
     marcar_cambio()
     return {"ok": True}

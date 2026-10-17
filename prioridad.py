@@ -58,7 +58,7 @@ def item_de_nodo(nodo, ahora, ultimo_sismo_t):
         "personas": nodo.get("personas", 0),
         "vulnerable": nodo.get("tipo_lugar") in VULNERABLES,
         "recurso": recurso,
-        "texto": f"📡 {nodo['nombre']}: {texto}",
+        "texto": f"{nodo['nombre']}: {texto}",
     }
 
 
@@ -73,7 +73,7 @@ def item_de_comunidad(cid, st, config):
         "personas": config.get("personas", 0),
         "vulnerable": False,
         "recurso": "evacuacion" if alerta else "evaluacion",
-        "texto": f"⛰️ {config['nombre']}: {'ALERTA' if alerta else 'Atención'}. {st['motivos'][0] if st['motivos'] else ''}",
+        "texto": f"{config['nombre']}: {'ALERTA' if alerta else 'Atención'}. {st['motivos'][0] if st['motivos'] else ''}",
     }
 
 
@@ -102,17 +102,17 @@ def explicar(items, confianza):
             por_tipo[i["tipo"]][0] += 1
             por_tipo[i["tipo"]][1] += i["personas"]
     for tipo, (n, personas) in sorted(por_tipo.items(), key=lambda kv: -GRAVEDAD_REPORTE[kv[0]]):
-        emoji, nombre = TIPOS_REPORTE[tipo]
-        lineas.append(f"{emoji} {_plural(n, 'reporte', 'reportes')}: {nombre.lower()} ({_plural(personas, 'persona', 'personas')})")
+        _, nombre = TIPOS_REPORTE[tipo]
+        lineas.append(f"{_plural(n, 'reporte', 'reportes')}: {nombre.lower()} ({_plural(personas, 'persona', 'personas')})")
     lineas += [i["texto"] for i in items if i["fuente"] == "sensor"]
     if any(i["vulnerable"] for i in items):
-        lineas.append("🏫 Afecta escuela, hospital o asilo (×1,5)")
+        lineas.append("Afecta escuela, hospital o asilo (×1,5)")
     if confianza == 1.0:
-        lineas.append("✅ Sensor y comunidad coinciden (confianza 100 %)")
+        lineas.append("Sensor y comunidad coinciden (confianza 100 %)")
     elif confianza == 0.85:
-        lineas.append("☑️ Varias fuentes (confianza 85 %)")
+        lineas.append("Varias fuentes (confianza 85 %)")
     else:
-        lineas.append("❔ Una sola fuente, conviene verificar (confianza 60 %)")
+        lineas.append("Una sola fuente, conviene verificar (confianza 60 %)")
     return lineas
 
 
@@ -163,7 +163,7 @@ def calcular(estado, ahora, comunidades=None):
             "puntaje": round(base * confianza, 1),
             "confianza": confianza,
             "pendientes": len(items),
-            "explicacion": explicar(items, confianza) if items else ["✔️ Pedidos cubiertos, recursos en camino"],
+            "explicacion": explicar(items, confianza) if items else ["Pedidos cubiertos, recursos en camino"],
             "sugeridos": dict(Counter(i["recurso"] for i in items)),
             "asignados": asignados.get(zona_id, []),
         })

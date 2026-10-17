@@ -107,7 +107,7 @@ function pintarHistorial() {
   $('mis-reportes').innerHTML = historial.map((h) => {
     const tipo = catalogo.tipos_reporte[h.tipo];
     const [clase, texto] = ESTADO_REPORTE[h.estado] || ['off', h.estado];
-    return `<li><span>${tipo.emoji} ${VIGIA.esc(tipo.nombre)}</span><span class="etq ${clase}">${texto}</span>
+    return `<li><span class="con-ico">${icono(tipo.icono)}${VIGIA.esc(tipo.nombre)}</span><span class="etq ${clase}">${texto}</span>
       <small>${VIGIA.hora(h.creado)} · ${h.personas} ${h.personas === 1 ? 'persona' : 'personas'}</small></li>`;
   }).join('') || '<li><small>Aún no enviaste reportes.</small></li>';
   const pendientes = VIGIA.leer(CLAVE_COLA, []).length;
@@ -142,7 +142,7 @@ function comprimirFoto(archivo) {
 function elegirTipo(tipo) {
   tipoElegido = tipo;
   const t = catalogo.tipos_reporte[tipo];
-  $('titulo-detalle').textContent = `${t.emoji} ${t.nombre}`;
+  $('titulo-detalle').innerHTML = `${icono(t.icono)}${VIGIA.esc(t.nombre)}`;
   $('personas').value = 1;
   $('descripcion').value = '';
   document.querySelector('input[name="lugar"][value="casa"]').checked = true;
@@ -205,7 +205,7 @@ async function activarSonido() {
     sonidoActivo = true;
     hablar('Alertas activadas');
     $('estado-alertas').className = 'estado-alertas activa';
-    $('alertas-icono').textContent = '🔔';
+    $('alertas-icono').innerHTML = icono('bell-ring');
     $('alertas-titulo').textContent = 'Alertas activas';
     $('alertas-texto').textContent = 'Sonará la sirena y una voz te avisará. Deja esta página abierta: con la pantalla bloqueada el navegador no puede sonar.';
     mantenerPantalla();
@@ -442,7 +442,7 @@ async function iniciar() {
   const graves = new Set(['atrapados', 'heridos', 'deslizamiento']);
   $('tipos').innerHTML = Object.entries(catalogo.tipos_reporte).map(([k, t]) =>
     `<button class="tipo tipo-${k} ${graves.has(k) ? 'grave' : ''}" data-tipo="${k}">
-      <span class="tipo-ico" aria-hidden="true">${t.emoji}</span><span class="tipo-nom">${VIGIA.esc(t.nombre)}</span></button>`).join('');
+      <span class="tipo-ico" aria-hidden="true">${icono(t.icono)}</span><span class="tipo-nom">${VIGIA.esc(t.nombre)}</span></button>`).join('');
   pintarZona();
   $('tipos').addEventListener('click', (e) => {
     const boton = e.target.closest('[data-tipo]');

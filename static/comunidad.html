@@ -21,11 +21,11 @@
 
   <main class="movil">
     <section id="estado-alertas" class="estado-alertas inactiva" style="margin-top:16px">
-      <span class="icono" id="alertas-icono">🔕</span>
+      <span class="icono" id="alertas-icono"><i data-icono="bell-off"></i></span>
       <b id="alertas-titulo">Alertas sin activar</b>
       <p id="alertas-texto">Actívalas para escuchar la sirena si hay alerta de deslizamiento en tu comunidad. Deja esta página abierta.</p>
       <div class="acciones">
-        <button id="btn-alertas" class="btn btn-primario">🔔 Activar alertas</button>
+        <button id="btn-alertas" class="btn btn-primario"><i data-icono="bell"></i>Activar alertas</button>
         <button id="btn-probar" class="btn-texto">Probar alerta (10 s)</button>
       </div>
     </section>
@@ -80,13 +80,13 @@
       </label>
 
       <div class="foto">
-        <label class="btn">📷 Agregar foto<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="btn"><i data-icono="camera"></i>Agregar foto<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
         <img id="vista-foto" class="vista-foto" alt="Foto adjunta" hidden>
       </div>
 
       <div class="envio">
         <button id="btn-enviar" class="btn btn-peligro btn-grande">Enviar reporte</button>
-        <a id="btn-sms" class="btn btn-grande" href="#">✉️ Sin internet: enviar por SMS</a>
+        <a id="btn-sms" class="btn btn-grande" href="#"><i data-icono="message-square-text"></i>Sin internet: enviar por SMS</a>
       </div>
     </section>
 
@@ -104,7 +104,7 @@
         <label class="check"><input id="es-comite" type="checkbox"> Soy del comité local: recibo también los avisos de Atención</label>
         <p class="ayuda">Atención: un solo sensor se movió y el comité verifica en el sitio. Alerta: dos sensores coinciden y se avisa a todos los habitantes.</p>
         <div class="fila">
-          <button id="btn-gps" class="btn btn-pequeno">📍 Usar mi GPS</button>
+          <button id="btn-gps" class="btn btn-pequeno"><i data-icono="locate-fixed"></i>Usar mi GPS</button>
           <small id="txt-gps" class="ayuda"></small>
         </div>
         <label class="campo">Número SMS de la central
@@ -125,11 +125,12 @@
       <div class="anillo-num"><b id="alerta-cuenta">--</b><span id="alerta-unidad">segundos</span></div>
     </div>
     <p id="alerta-texto" class="alerta-texto"></p>
-    <div class="consejos"><span>Agáchate</span><span>Cúbrete</span><span>Sujétate</span></div>
-    <button id="alerta-sonido" class="btn alerta-sonido" hidden>🔊 Toca para escuchar la alarma</button>
+    <div class="consejos"><span><i data-icono="arrow-down-to-line"></i>Agáchate</span><span><i data-icono="shield"></i>Cúbrete</span><span><i data-icono="hand"></i>Sujétate</span></div>
+    <button id="alerta-sonido" class="btn alerta-sonido" hidden><i data-icono="volume-2"></i>Toca para escuchar la alarma</button>
     <button id="alerta-cerrar" class="btn">Cerrar</button>
   </div>
 
+  <script src="/static/iconos.js"></script>
   <script src="/static/comun.js"></script>
   <script src="/static/comunidad.js"></script>
 </body>
